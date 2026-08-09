@@ -12,7 +12,7 @@ const AUTH_URL = "https://api.prod.whoop.com/oauth/oauth2/auth";
  * context can be fetched.
  */
 export const SCOPES =
-  "offline read:workout read:cycle read:recovery read:sleep";
+  "offline read:workout read:cycles read:recovery read:sleep";
 
 /** obsidian://<this> — must match the redirect URI registered with WHOOP. */
 export const CALLBACK_ACTION = "whoop-workout-callback";

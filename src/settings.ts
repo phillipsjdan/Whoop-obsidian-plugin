@@ -95,7 +95,7 @@ export class WhoopWorkoutSettingTab extends PluginSettingTab {
 
     containerEl.createEl("p", {
       cls: "setting-item-description",
-      text: `Create an app at developer.whoop.com with the redirect URI ${REDIRECT_URI} and the scopes "offline", "read:workout", "read:cycle", "read:recovery" and "read:sleep", then paste its credentials below.`,
+      text: `Create an app at developer.whoop.com with the redirect URI ${REDIRECT_URI} and the scopes "offline", "read:workout", "read:cycles", "read:recovery" and "read:sleep", then paste its credentials below.`,
     });
 
     new Setting(containerEl)
