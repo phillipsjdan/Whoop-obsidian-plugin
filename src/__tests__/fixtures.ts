@@ -1,4 +1,12 @@
-import { Workout, WorkoutScore, ZoneDuration } from "../models.ts";
+import {
+  Cycle,
+  DayContext,
+  Recovery,
+  Sleep,
+  Workout,
+  WorkoutScore,
+  ZoneDuration,
+} from "../models.ts";
 
 export function zoneDuration(overrides: Partial<ZoneDuration> = {}): ZoneDuration {
   return {
@@ -85,6 +93,80 @@ export function liftingWorkout(overrides: Partial<Workout> = {}): Workout {
       percent_recorded: 100,
       zone_durations: zoneDuration({ zone_one_milli: 2_400_000 }),
     }),
+    ...overrides,
+  };
+}
+
+/** Day strain of 14.2 for the cycle starting 2026-08-09 local. */
+export function cycle(overrides: Partial<Cycle> = {}): Cycle {
+  return {
+    id: 93845,
+    start: "2026-08-09T11:00:00.000Z",
+    end: "2026-08-10T11:00:00.000Z",
+    timezone_offset: "-07:00",
+    score_state: "SCORED",
+    score: { strain: 14.2, kilojoule: 9800, average_heart_rate: 74, max_heart_rate: 180 },
+    ...overrides,
+  };
+}
+
+export function recovery(overrides: Partial<Recovery> = {}): Recovery {
+  return {
+    cycle_id: 93845,
+    sleep_id: "c1d2e3f4-0000-4a2b-9c3d-000000000010",
+    score_state: "SCORED",
+    score: {
+      user_calibrating: false,
+      recovery_score: 62,
+      resting_heart_rate: 48,
+      hrv_rmssd_milli: 78.4,
+      spo2_percentage: 95.6,
+      skin_temp_celsius: 33.2,
+    },
+    ...overrides,
+  };
+}
+
+/** 7 h 30 min in bed, 18 min of it awake, ending on the morning of the 9th. */
+export function sleep(overrides: Partial<Sleep> = {}): Sleep {
+  return {
+    id: "c1d2e3f4-0000-4a2b-9c3d-000000000010",
+    start: "2026-08-09T04:30:00.000Z",
+    end: "2026-08-09T12:00:00.000Z",
+    timezone_offset: "-07:00",
+    nap: false,
+    score_state: "SCORED",
+    score: {
+      stage_summary: {
+        total_in_bed_time_milli: 27_000_000,
+        total_awake_time_milli: 1_080_000,
+        total_light_sleep_time_milli: 13_000_000,
+        total_slow_wave_sleep_time_milli: 6_500_000,
+        total_rem_sleep_time_milli: 6_420_000,
+        sleep_cycle_count: 5,
+        disturbance_count: 9,
+      },
+      sleep_needed: {
+        baseline_milli: 28_000_000,
+        need_from_sleep_debt_milli: 1_200_000,
+        need_from_recent_strain_milli: 900_000,
+        need_from_recent_nap_milli: 0,
+      },
+      respiratory_rate: 14.6,
+      sleep_performance_percentage: 86,
+      sleep_consistency_percentage: 71,
+      sleep_efficiency_percentage: 93,
+    },
+    ...overrides,
+  };
+}
+
+export function dayContext(overrides: Partial<DayContext> = {}): DayContext {
+  return {
+    date: "2026-08-09",
+    cycle: cycle(),
+    recovery: recovery(),
+    sleep: sleep(),
     ...overrides,
   };
 }

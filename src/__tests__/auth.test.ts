@@ -30,8 +30,12 @@ describe("buildAuthUrl", () => {
     const { url } = buildAuthUrl("client-123");
     const params = new URL(url).searchParams;
 
-    expect(params.get("scope")).toBe("offline read:workout");
-    for (const unwanted of ["read:cycles", "read:recovery", "read:sleep", "read:body_measurement", "read:profile"]) {
+    expect(params.get("scope")).toBe(
+      "offline read:workout read:cycle read:recovery read:sleep"
+    );
+    // Read-only, and nothing identifying: the plugin never needs who you are or
+    // what you weigh.
+    for (const unwanted of ["read:body_measurement", "read:profile", "write:"]) {
       expect(url).not.toContain(unwanted);
     }
   });

@@ -2,20 +2,27 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_TEMPLATE_OPTIONS,
   TemplateOptions,
+  containsAnyWorkout,
   containsWorkout,
+  dayMarker,
   normalizeNotePath,
+  renderDaySummary,
   renderWorkoutNote,
   renderWorkoutSnippet,
   sanitizeFileName,
+  shouldIncludeDaySummary,
   suggestNotePath,
   workoutMarker,
 } from "../template.ts";
 import { SPORT_NAMES, sportName } from "../models.ts";
 import {
   cyclingWorkout,
+  dayContext,
   liftingWorkout,
   pendingWorkout,
+  recovery,
   runningWorkout,
+  sleep,
   workoutScore,
   zoneDuration,
 } from "./fixtures.ts";
@@ -436,5 +443,112 @@ describe("normalizeNotePath", () => {
 
   it("keeps a path from escaping the vault", () => {
     expect(normalizeNotePath("../../etc/passwd")).toBe("etc/passwd.md");
+  });
+});
+
+describe("renderDaySummary", () => {
+  it("states recovery, sleep and day strain as prose, not table rows", () => {
+    const summary = renderDaySummary(dayContext());
+
+    expect(summary).toBe(
+      [
+        "Recovery that morning was 62%, with a resting heart rate of 48 bpm, " +
+          "HRV of 78 ms and blood oxygen at 96%. The night before brought " +
+          "7 h 12 min of sleep against a need of 8 h 22 min — 86% sleep " +
+          "performance, 93% efficiency and 9 disturbances. Day strain reached 14.2.",
+        "<!-- whoop-day: 2026-08-09 -->",
+      ].join("\n")
+    );
+    expect(summary).not.toContain("|");
+  });
+
+  it("counts sleep as time in bed less time awake", () => {
+    // 27,000,000 ms in bed − 1,080,000 ms awake = 7 h 12 min.
+    expect(renderDaySummary(dayContext())).toContain("7 h 12 min of sleep");
+  });
+
+  it("drops the clauses it has no numbers for", () => {
+    const summary = renderDaySummary(dayContext({ sleep: null, cycle: null }));
+
+    expect(summary).toContain("Recovery that morning was 62%");
+    expect(summary).not.toContain("night before");
+    expect(summary).not.toContain("Day strain");
+  });
+
+  it("flags a recovery score WHOOP is still calibrating", () => {
+    const summary = renderDaySummary(
+      dayContext({
+        sleep: null,
+        cycle: null,
+        recovery: recovery({ score: { recovery_score: 55, user_calibrating: true } }),
+      })
+    );
+
+    expect(summary).toContain("still calibrating");
+  });
+
+  it("falls back to the sleep score when the stages are missing", () => {
+    const summary = renderDaySummary(
+      dayContext({
+        recovery: null,
+        cycle: null,
+        sleep: sleep({ score: { sleep_performance_percentage: 88 } }),
+      })
+    );
+
+    expect(summary).toContain("Sleep the night before scored 88%.");
+  });
+
+  it("renders nothing at all when the day has no scores", () => {
+    const empty = { date: "2026-08-09", cycle: null, recovery: null, sleep: null };
+    expect(renderDaySummary(empty)).toBe("");
+  });
+});
+
+describe("shouldIncludeDaySummary", () => {
+  it("is true for a note with no WHOOP blocks in it", () => {
+    expect(shouldIncludeDaySummary("")).toBe(true);
+    expect(shouldIncludeDaySummary("# Monday\n\nSome notes.\n")).toBe(true);
+  });
+
+  it("is false once the note already carries a workout", () => {
+    const note = `# Monday\n\n${renderWorkoutSnippet(runningWorkout())}\n`;
+
+    expect(containsAnyWorkout(note)).toBe(true);
+    expect(shouldIncludeDaySummary(note)).toBe(false);
+  });
+
+  it("is false when the day sentence is there without a workout", () => {
+    // Covers a workout block deleted by hand while the sentence above it stayed.
+    expect(shouldIncludeDaySummary(`Recovery was 62%.\n${dayMarker("2026-08-09")}`)).toBe(
+      false
+    );
+  });
+
+  it("does not repeat the day sentence for a second workout on another day", () => {
+    const note = `${renderDaySummary(dayContext())}\n\n${renderWorkoutSnippet(runningWorkout())}`;
+
+    expect(shouldIncludeDaySummary(note)).toBe(false);
+  });
+});
+
+describe("renderWorkoutNote with a day context", () => {
+  it("puts the sentence between the frontmatter and the workout heading", () => {
+    const note = renderWorkoutNote(runningWorkout(), DEFAULT_TEMPLATE_OPTIONS, dayContext());
+    const lines = note.split("\n");
+
+    const frontmatterEnd = lines.indexOf("---", 1);
+    const sentence = lines.findIndex((l) => l.startsWith("Recovery that morning"));
+    const heading = lines.findIndex((l) => l.startsWith("### "));
+
+    expect(frontmatterEnd).toBeGreaterThan(0);
+    expect(sentence).toBeGreaterThan(frontmatterEnd);
+    expect(heading).toBeGreaterThan(sentence);
+  });
+
+  it("is unchanged when there is no day context to render", () => {
+    expect(renderWorkoutNote(runningWorkout(), DEFAULT_TEMPLATE_OPTIONS, null)).toBe(
+      renderWorkoutNote(runningWorkout())
+    );
   });
 });

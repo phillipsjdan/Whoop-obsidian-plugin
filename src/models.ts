@@ -113,6 +113,135 @@ export interface PaginatedResponse<T> {
   next_token?: string | null;
 }
 
+/**
+ * Day-level records. Every score field is optional: WHOOP omits scores that are
+ * still pending, and the renderer drops any clause it has no number for rather
+ * than printing a blank.
+ */
+
+export interface CycleScore {
+  strain?: number;
+  kilojoule?: number;
+  average_heart_rate?: number;
+  max_heart_rate?: number;
+}
+
+export interface Cycle {
+  id: number;
+  start: string;
+  /** Absent while the cycle is still the current one. */
+  end?: string | null;
+  timezone_offset?: string;
+  score_state?: string;
+  score?: CycleScore;
+}
+
+export interface RecoveryScore {
+  /** True while WHOOP is still establishing a baseline; the score is unreliable. */
+  user_calibrating?: boolean;
+  recovery_score?: number;
+  resting_heart_rate?: number;
+  hrv_rmssd_milli?: number;
+  spo2_percentage?: number;
+  skin_temp_celsius?: number;
+}
+
+export interface Recovery {
+  cycle_id?: number;
+  sleep_id?: string;
+  score_state?: string;
+  score?: RecoveryScore;
+}
+
+export interface SleepStageSummary {
+  total_in_bed_time_milli?: number;
+  total_awake_time_milli?: number;
+  total_no_data_time_milli?: number;
+  total_light_sleep_time_milli?: number;
+  total_slow_wave_sleep_time_milli?: number;
+  total_rem_sleep_time_milli?: number;
+  sleep_cycle_count?: number;
+  disturbance_count?: number;
+}
+
+export interface SleepNeeded {
+  baseline_milli?: number;
+  need_from_sleep_debt_milli?: number;
+  need_from_recent_strain_milli?: number;
+  need_from_recent_nap_milli?: number;
+}
+
+export interface SleepScore {
+  stage_summary?: SleepStageSummary;
+  sleep_needed?: SleepNeeded;
+  respiratory_rate?: number;
+  sleep_performance_percentage?: number;
+  sleep_consistency_percentage?: number;
+  sleep_efficiency_percentage?: number;
+}
+
+export interface Sleep {
+  id: string;
+  start: string;
+  end: string;
+  timezone_offset?: string;
+  nap?: boolean;
+  score_state?: string;
+  score?: SleepScore;
+}
+
+/** The day a workout happened in, as far as WHOOP knows. Any part may be absent. */
+export interface DayContext {
+  /** Local calendar day, YYYY-MM-DD — identifies the summary in a note. */
+  date: string;
+  cycle: Cycle | null;
+  recovery: Recovery | null;
+  sleep: Sleep | null;
+}
+
+/** True when there is at least one number worth writing a sentence about. */
+export function hasDayContext(context: DayContext | null): boolean {
+  if (!context) return false;
+  return Boolean(context.cycle?.score || context.recovery?.score || context.sleep?.score);
+}
+
+/**
+ * Total time actually asleep: time in bed less time awake.
+ *
+ * WHOOP reports the stages rather than a single total, and in-bed time on its
+ * own overstates a night with long wakes in it.
+ */
+export function asleepMs(sleep: Sleep): number | null {
+  const stages = sleep.score?.stage_summary;
+  if (!stages) return null;
+  const inBed = stages.total_in_bed_time_milli;
+  if (!Number.isFinite(inBed) || (inBed ?? 0) <= 0) return null;
+  const awake = Number.isFinite(stages.total_awake_time_milli)
+    ? (stages.total_awake_time_milli as number)
+    : 0;
+  return Math.max(0, (inBed as number) - awake);
+}
+
+/** Sleep WHOOP judged was needed, summing the baseline and its adjustments. */
+export function sleepNeededMs(sleep: Sleep): number | null {
+  const needed = sleep.score?.sleep_needed;
+  if (!needed) return null;
+  const parts = [
+    needed.baseline_milli,
+    needed.need_from_sleep_debt_milli,
+    needed.need_from_recent_strain_milli,
+    needed.need_from_recent_nap_milli,
+  ];
+  let total = 0;
+  let sawBaseline = false;
+  for (const part of parts) {
+    if (!Number.isFinite(part)) continue;
+    total += part as number;
+    sawBaseline = true;
+  }
+  return sawBaseline && total > 0 ? total : null;
+}
+
 /** Human-readable name for a WHOOP sport_id. */
 export function sportName(workout: Pick<Workout, "sport_id" | "sport_name">): string {
   const explicit = workout.sport_name?.trim();

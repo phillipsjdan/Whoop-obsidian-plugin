@@ -1,5 +1,12 @@
 import { ApiClient, NotFoundError } from "./client.ts";
-import { PaginatedResponse, Workout } from "./models.ts";
+import {
+  Cycle,
+  DayContext,
+  PaginatedResponse,
+  Recovery,
+  Sleep,
+  Workout,
+} from "./models.ts";
 
 /** Safety valve so a misbehaving next_token can't spin forever. */
 const MAX_PAGES = 50;
@@ -74,6 +81,90 @@ export async function getWorkoutsForDay(
       return t >= start.getTime() && t < end.getTime();
     })
     .sort((a, b) => new Date(b.start).getTime() - new Date(a.start).getTime());
+}
+
+export function getCycles(client: ApiClient, start: Date, end: Date): Promise<Cycle[]> {
+  return fetchPaginated<Cycle>(client, "/cycle", start, end);
+}
+
+export function getRecoveries(
+  client: ApiClient,
+  start: Date,
+  end: Date
+): Promise<Recovery[]> {
+  return fetchPaginated<Recovery>(client, "/recovery", start, end);
+}
+
+export function getSleeps(client: ApiClient, start: Date, end: Date): Promise<Sleep[]> {
+  return fetchPaginated<Sleep>(client, "/activity/sleep", start, end);
+}
+
+/**
+ * Gathers the cycle, recovery and sleep behind a given local day.
+ *
+ * Each part is fetched independently and a failure yields null rather than
+ * throwing. This data decorates a workout; it is never the reason the user ran
+ * the command, so a missing scope — the state every existing install is in until
+ * it reconnects — must not stop the workout itself from being written.
+ */
+export async function getDayContext(
+  client: ApiClient,
+  date: Date
+): Promise<DayContext> {
+  const { start, end } = localDayRange(date);
+  // Sleep for "this day" began the evening before, so the window opens early.
+  const sleepStart = addLocalDays(start, -1);
+
+  const [cycles, recoveries, sleeps] = await Promise.all([
+    optional(() => getCycles(client, start, end), "cycle"),
+    optional(() => getRecoveries(client, start, end), "recovery"),
+    optional(() => getSleeps(client, sleepStart, end), "sleep"),
+  ]);
+
+  return {
+    date: formatLocalDate(date),
+    cycle: pickCycle(cycles, start, end),
+    recovery: recoveries[0] ?? null,
+    sleep: pickSleep(sleeps, start, end),
+  };
+}
+
+/** Runs a fetch, downgrading any failure to an empty result. */
+async function optional<T>(run: () => Promise<T[]>, label: string): Promise<T[]> {
+  try {
+    return await run();
+  } catch (e) {
+    // Most often a 403 because the token predates the cycle/recovery/sleep
+    // scopes. Nothing the user can act on mid-command, so it stays in the log.
+    console.warn(`[WHOOP workout insert] could not load ${label} for the day`, e);
+    return [];
+  }
+}
+
+/** The cycle that starts within the day, falling back to whatever came back. */
+function pickCycle(cycles: Cycle[], start: Date, end: Date): Cycle | null {
+  const withinDay = cycles.find((c) => {
+    const t = new Date(c.start).getTime();
+    return t >= start.getTime() && t < end.getTime();
+  });
+  return withinDay ?? cycles[0] ?? null;
+}
+
+/**
+ * The main sleep for the day: the last non-nap sleep to end on it. WHOOP counts
+ * the night that ends on a given morning as that day's sleep, and naps are
+ * separate records that would otherwise win by being more recent.
+ */
+function pickSleep(sleeps: Sleep[], start: Date, end: Date): Sleep | null {
+  const nights = sleeps
+    .filter((s) => !s.nap)
+    .filter((s) => {
+      const t = new Date(s.end).getTime();
+      return t >= start.getTime() && t < end.getTime();
+    })
+    .sort((a, b) => new Date(b.end).getTime() - new Date(a.end).getTime());
+
+  return nights[0] ?? null;
 }
 
 /** Local midnight of `date` through local midnight of the following day. */

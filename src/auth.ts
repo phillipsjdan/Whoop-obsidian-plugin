@@ -3,8 +3,16 @@ import { requestUrl } from "obsidian";
 const TOKEN_URL = "https://api.prod.whoop.com/oauth/oauth2/token";
 const AUTH_URL = "https://api.prod.whoop.com/oauth/oauth2/auth";
 
-/** This plugin only reads workouts, so it only asks for workout scope. */
-export const SCOPES = "offline read:workout";
+/**
+ * Read-only scopes. Workouts are the point of the plugin; cycle, recovery and
+ * sleep back the day-context sentence written above the first workout in a note.
+ *
+ * Changing this list invalidates an existing authorization — WHOOP grants scopes
+ * at consent time, so anyone upgrading has to reconnect once before the day
+ * context can be fetched.
+ */
+export const SCOPES =
+  "offline read:workout read:cycle read:recovery read:sleep";
 
 /** obsidian://<this> — must match the redirect URI registered with WHOOP. */
 export const CALLBACK_ACTION = "whoop-workout-callback";

@@ -18,8 +18,8 @@ import {
   validateState,
 } from "./auth.ts";
 import { WhoopClient } from "./client.ts";
-import { getWorkoutsForDay } from "./fetch.ts";
-import { Workout, sportName } from "./models.ts";
+import { getDayContext, getWorkoutsForDay } from "./fetch.ts";
+import { DayContext, Workout, sportName } from "./models.ts";
 import {
   DEFAULT_SETTINGS,
   WhoopWorkoutSettingTab,
@@ -35,8 +35,10 @@ import {
 import {
   containsWorkout,
   normalizeNotePath,
+  renderDaySummary,
   renderWorkoutNote,
   renderWorkoutSnippet,
+  shouldIncludeDaySummary,
   suggestNotePath,
 } from "./template.ts";
 import { ConnectModal } from "./ui/connectModal.ts";
@@ -246,6 +248,41 @@ export default class WhoopWorkoutPlugin extends Plugin {
     return renderWorkoutSnippet(workout, templateOptions(this.settings));
   }
 
+  /**
+   * Fetches the day's recovery, sleep and strain, or null when the setting is
+   * off or nothing came back. Never throws: the day context is decoration on top
+   * of the workout, so a missing scope must not sink the command.
+   */
+  private async dayContextFor(workout: Workout): Promise<DayContext | null> {
+    if (!this.settings.includeDaySummary) return null;
+    try {
+      const client = await this.getClient();
+      return await getDayContext(client, new Date(workout.start));
+    } catch (e) {
+      console.warn("[WHOOP workout insert] could not load the day context", e);
+      return null;
+    }
+  }
+
+  /**
+   * The block to write: the workout, preceded by the day sentence when this is
+   * the first WHOOP block on the page.
+   *
+   * `content` is read at write time rather than when the command started, so a
+   * second workout added to a note already holding one does not repeat the day.
+   */
+  private blockFor(
+    workout: Workout,
+    content: string,
+    context: DayContext | null
+  ): string {
+    const snippet = this.snippetFor(workout);
+    if (!context || !shouldIncludeDaySummary(content)) return snippet;
+
+    const summary = renderDaySummary(context);
+    return summary ? `${summary}\n\n${snippet}` : snippet;
+  }
+
   // --- Commands ------------------------------------------------------------
 
   private async insertAtCursor(editor: Editor): Promise<void> {
@@ -257,8 +294,13 @@ export default class WhoopWorkoutPlugin extends Plugin {
 
     if (!(await this.confirmNotDuplicate(editor.getValue(), workout))) return;
 
+    const context = await this.dayContextFor(workout);
+
+    // Re-read the buffer: the fetch above gave the user time to keep typing.
+    const block = this.blockFor(workout, editor.getValue(), context);
+
     // Only touches the editor buffer — no file is read or rewritten here.
-    editor.replaceSelection(`${this.snippetFor(workout)}\n`);
+    editor.replaceSelection(`${block}\n`);
     new Notice("Workout inserted.");
   }
 
@@ -305,7 +347,6 @@ export default class WhoopWorkoutPlugin extends Plugin {
     const target = parseHeadingInput(headingInput);
     if (!target) return;
 
-    const block = this.snippetFor(workout);
     const position = this.settings.insertPosition;
 
     // Read first to find out whether the heading exists, because the answer
@@ -313,7 +354,14 @@ export default class WhoopWorkoutPlugin extends Plugin {
     const current = await this.app.vault.read(file);
     if (!(await this.confirmNotDuplicate(current, workout))) return;
 
-    const preview = insertUnderHeading(current, target, block, position);
+    const context = await this.dayContextFor(workout);
+
+    const preview = insertUnderHeading(
+      current,
+      target,
+      this.blockFor(workout, current, context),
+      position
+    );
 
     let createHeading = false;
     if (!preview.found) {
@@ -333,6 +381,9 @@ export default class WhoopWorkoutPlugin extends Plugin {
     // made while the prompts were open cannot be clobbered.
     const result: { outcome: WriteOutcome } = { outcome: "vanished" };
     await this.app.vault.process(file, (data) => {
+      // Rebuilt against the content being written, so the day sentence is
+      // included or dropped based on what the note holds right now.
+      const block = this.blockFor(workout, data, context);
       const spliced = insertUnderHeading(data, target, block, position);
       if (spliced.found) {
         result.outcome = "inserted";
@@ -370,7 +421,12 @@ export default class WhoopWorkoutPlugin extends Plugin {
     );
     if (!workout) return;
 
-    const content = renderWorkoutNote(workout, templateOptions(this.settings));
+    const context = await this.dayContextFor(workout);
+    const content = renderWorkoutNote(
+      workout,
+      templateOptions(this.settings),
+      context
+    );
     let suggestion = suggestNotePath(
       workout,
       this.settings.newNoteFolder,
