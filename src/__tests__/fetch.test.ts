@@ -4,13 +4,21 @@ import {
   addLocalDays,
   fetchPaginated,
   formatLocalDate,
+  getDayContext,
   getWorkoutsForDay,
   localDayRange,
   parseDateInput,
   startOfLocalDay,
 } from "../fetch.ts";
 import { PaginatedResponse, Workout } from "../models.ts";
-import { cyclingWorkout, liftingWorkout, runningWorkout } from "./fixtures.ts";
+import {
+  cycle,
+  cyclingWorkout,
+  liftingWorkout,
+  recovery,
+  runningWorkout,
+  sleep,
+} from "./fixtures.ts";
 
 interface Call {
   path: string;
@@ -245,5 +253,98 @@ describe("getWorkoutsForDay", () => {
   it("returns an empty list for a day with nothing recorded", async () => {
     const client = new FakeClient([page<Workout>([])]);
     await expect(getWorkoutsForDay(client, new Date(2026, 7, 9))).resolves.toEqual([]);
+  });
+});
+
+/** Answers by path rather than by call order, since the day fetches run in parallel. */
+class PathClient implements ApiClient {
+  readonly calls: Call[] = [];
+
+  constructor(private readonly byPath: Record<string, unknown>) {}
+
+  async get(path: string, params?: Record<string, string>): Promise<unknown> {
+    this.calls.push({ path, params });
+    const response = this.byPath[path];
+    if (response instanceof Error) throw response;
+    return response ?? { records: [] };
+  }
+
+  paramsFor(path: string): Record<string, string> | undefined {
+    return this.calls.find((c) => c.path === path)?.params;
+  }
+}
+
+describe("getDayContext", () => {
+  const day = new Date(2026, 7, 9);
+
+  it("gathers the cycle, recovery and sleep for the day", async () => {
+    const client = new PathClient({
+      "/cycle": page([cycle()]),
+      "/recovery": page([recovery()]),
+      "/activity/sleep": page([sleep()]),
+    });
+
+    const context = await getDayContext(client, day);
+
+    expect(context.date).toBe("2026-08-09");
+    expect(context.cycle?.score?.strain).toBe(14.2);
+    expect(context.recovery?.score?.recovery_score).toBe(62);
+    expect(context.sleep?.id).toBe("c1d2e3f4-0000-4a2b-9c3d-000000000010");
+  });
+
+  it("opens the sleep window a day early, since the night starts the evening before", async () => {
+    const client = new PathClient({});
+    await getDayContext(client, day);
+
+    const sleepStart = client.paramsFor("/activity/sleep")?.start;
+    const cycleStart = client.paramsFor("/cycle")?.start;
+
+    expect(sleepStart).toBe(addLocalDays(startOfLocalDay(day), -1).toISOString());
+    expect(cycleStart).toBe(startOfLocalDay(day).toISOString());
+  });
+
+  it("picks the night's sleep over a nap taken later the same day", async () => {
+    const nap = sleep({
+      id: "c1d2e3f4-0000-4a2b-9c3d-000000000099",
+      nap: true,
+      start: "2026-08-09T20:00:00.000Z",
+      end: "2026-08-09T20:40:00.000Z",
+    });
+    const client = new PathClient({ "/activity/sleep": page([nap, sleep()]) });
+
+    const context = await getDayContext(client, day);
+
+    expect(context.sleep?.nap).toBe(false);
+    expect(context.sleep?.id).toBe("c1d2e3f4-0000-4a2b-9c3d-000000000010");
+  });
+
+  it("survives a scope the token does not carry", async () => {
+    // What every install looks like until it reconnects for the new scopes.
+    const client = new PathClient({
+      "/cycle": new Error("403 Forbidden"),
+      "/recovery": new Error("403 Forbidden"),
+      "/activity/sleep": page([sleep()]),
+    });
+
+    const context = await getDayContext(client, day);
+
+    expect(context.cycle).toBeNull();
+    expect(context.recovery).toBeNull();
+    expect(context.sleep).not.toBeNull();
+  });
+
+  it("returns an empty context rather than throwing when everything fails", async () => {
+    const client = new PathClient({
+      "/cycle": new Error("boom"),
+      "/recovery": new Error("boom"),
+      "/activity/sleep": new Error("boom"),
+    });
+
+    await expect(getDayContext(client, day)).resolves.toEqual({
+      date: "2026-08-09",
+      cycle: null,
+      recovery: null,
+      sleep: null,
+    });
   });
 });

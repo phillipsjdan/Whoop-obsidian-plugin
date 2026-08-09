@@ -2,20 +2,27 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_TEMPLATE_OPTIONS,
   TemplateOptions,
+  containsAnyWorkout,
   containsWorkout,
+  dayMarker,
   normalizeNotePath,
+  renderDaySummary,
   renderWorkoutNote,
   renderWorkoutSnippet,
   sanitizeFileName,
+  shouldIncludeDaySummary,
   suggestNotePath,
   workoutMarker,
 } from "../template.ts";
 import { SPORT_NAMES, sportName } from "../models.ts";
 import {
   cyclingWorkout,
+  dayContext,
   liftingWorkout,
   pendingWorkout,
+  recovery,
   runningWorkout,
+  sleep,
   workoutScore,
   zoneDuration,
 } from "./fixtures.ts";
@@ -75,10 +82,13 @@ describe("renderWorkoutSnippet", () => {
         "| Avg HR | 148 bpm |",
         "| Max HR | 167 bpm |",
         "| Calories | 612 kcal |",
-        "| Zone 2 time | 15 min |",
-        "| Zone 3 time | 19 min |",
-        "| Zone 4 time | 5 min |",
-        "| Zone 5 time | 3 min |",
+        "| Calorie rate | 874 kcal/h |",
+        "| Strain rate | 17.7 /h |",
+        "| Zone 2 time | 15 min (36%) |",
+        "| Zone 3 time | 19 min (45%) |",
+        "| Zone 4 time | 5 min (12%) |",
+        "| Zone 5 time | 3 min (7%) |",
+        "| Time in zone 3+ | 27 min (64%) |",
         "| Data completeness | 98% |",
         "<!-- whoop-workout: b5f2c1a0-1111-4a2b-9c3d-000000000001 -->",
       ].join("\n")
@@ -170,15 +180,95 @@ describe("renderWorkoutSnippet", () => {
     const markdown = renderWorkoutSnippet(
       runningWorkout({
         score: workoutScore({
-          zone_duration: zoneDuration({ zone_zero_milli: 600_000, zone_one_milli: 120_000 }),
+          zone_durations: zoneDuration({
+            zone_zero_milli: 600_000,
+            zone_one_milli: 120_000,
+          }),
         }),
       }),
       options()
     );
 
-    expect(markdown).toContain("| Zone 1 time | 2 min |");
-    expect(markdown).not.toContain("Zone 0");
+    expect(markdown).toContain("| Zone 0 time | 10 min (83%) |");
+    expect(markdown).toContain("| Zone 1 time | 2 min (17%) |");
     expect(markdown).not.toContain("Zone 2 time");
+    // Nothing at zone 3 or above, so the hard-effort summary is omitted.
+    expect(markdown).not.toContain("Time in zone 3+");
+  });
+
+  it("reads zone durations under the v1 key as well as the v2 one", () => {
+    const legacy = renderWorkoutSnippet(
+      runningWorkout({
+        score: workoutScore({
+          zone_durations: undefined,
+          zone_duration: zoneDuration({ zone_three_milli: 1_200_000 }),
+        }),
+      }),
+      options()
+    );
+
+    expect(legacy).toContain("| Zone 3 time | 20 min (100%) |");
+  });
+
+  it("omits the zone rows entirely when every zone is empty", () => {
+    const markdown = renderWorkoutSnippet(
+      runningWorkout({
+        score: workoutScore({ zone_durations: zoneDuration() }),
+      }),
+      options()
+    );
+
+    expect(markdown).not.toContain("Zone ");
+    expect(markdown).not.toContain("Time in zone 3+");
+  });
+
+  it("reads percent_recorded given as a 0-1 fraction", () => {
+    const markdown = renderWorkoutSnippet(
+      runningWorkout({ score: workoutScore({ percent_recorded: 1 }) }),
+      options()
+    );
+
+    expect(markdown).toContain("| Data completeness | 100% |");
+  });
+
+  it("reports a net descent separately from the elevation gain", () => {
+    const markdown = renderWorkoutSnippet(
+      runningWorkout({
+        score: workoutScore({
+          altitude_gain_meter: 148,
+          altitude_change_meter: -320,
+        }),
+      }),
+      options()
+    );
+
+    expect(markdown).toContain("| Elevation gain | 148 m |");
+    expect(markdown).toContain("| Net elevation | −320 m |");
+  });
+
+  it("omits the net elevation row on a loop that returns to its start", () => {
+    const markdown = renderWorkoutSnippet(
+      runningWorkout({
+        score: workoutScore({
+          altitude_gain_meter: 148,
+          altitude_change_meter: 0,
+        }),
+      }),
+      options()
+    );
+
+    expect(markdown).not.toContain("Net elevation");
+  });
+
+  it("drops the per-hour rates when they are turned off", () => {
+    const markdown = renderWorkoutSnippet(
+      runningWorkout(),
+      options({ includeRates: false })
+    );
+
+    expect(markdown).toContain("| Calories | 612 kcal |");
+    expect(markdown).not.toContain("Calorie rate");
+    expect(markdown).not.toContain("Strain rate");
   });
 
   it("still renders a workout that has not been scored", () => {
@@ -353,5 +443,112 @@ describe("normalizeNotePath", () => {
 
   it("keeps a path from escaping the vault", () => {
     expect(normalizeNotePath("../../etc/passwd")).toBe("etc/passwd.md");
+  });
+});
+
+describe("renderDaySummary", () => {
+  it("states recovery, sleep and day strain as prose, not table rows", () => {
+    const summary = renderDaySummary(dayContext());
+
+    expect(summary).toBe(
+      [
+        "Recovery that morning was 62%, with a resting heart rate of 48 bpm, " +
+          "HRV of 78 ms and blood oxygen at 96%. The night before brought " +
+          "7 h 12 min of sleep against a need of 8 h 22 min — 86% sleep " +
+          "performance, 93% efficiency and 9 disturbances. Day strain reached 14.2.",
+        "<!-- whoop-day: 2026-08-09 -->",
+      ].join("\n")
+    );
+    expect(summary).not.toContain("|");
+  });
+
+  it("counts sleep as time in bed less time awake", () => {
+    // 27,000,000 ms in bed − 1,080,000 ms awake = 7 h 12 min.
+    expect(renderDaySummary(dayContext())).toContain("7 h 12 min of sleep");
+  });
+
+  it("drops the clauses it has no numbers for", () => {
+    const summary = renderDaySummary(dayContext({ sleep: null, cycle: null }));
+
+    expect(summary).toContain("Recovery that morning was 62%");
+    expect(summary).not.toContain("night before");
+    expect(summary).not.toContain("Day strain");
+  });
+
+  it("flags a recovery score WHOOP is still calibrating", () => {
+    const summary = renderDaySummary(
+      dayContext({
+        sleep: null,
+        cycle: null,
+        recovery: recovery({ score: { recovery_score: 55, user_calibrating: true } }),
+      })
+    );
+
+    expect(summary).toContain("still calibrating");
+  });
+
+  it("falls back to the sleep score when the stages are missing", () => {
+    const summary = renderDaySummary(
+      dayContext({
+        recovery: null,
+        cycle: null,
+        sleep: sleep({ score: { sleep_performance_percentage: 88 } }),
+      })
+    );
+
+    expect(summary).toContain("Sleep the night before scored 88%.");
+  });
+
+  it("renders nothing at all when the day has no scores", () => {
+    const empty = { date: "2026-08-09", cycle: null, recovery: null, sleep: null };
+    expect(renderDaySummary(empty)).toBe("");
+  });
+});
+
+describe("shouldIncludeDaySummary", () => {
+  it("is true for a note with no WHOOP blocks in it", () => {
+    expect(shouldIncludeDaySummary("")).toBe(true);
+    expect(shouldIncludeDaySummary("# Monday\n\nSome notes.\n")).toBe(true);
+  });
+
+  it("is false once the note already carries a workout", () => {
+    const note = `# Monday\n\n${renderWorkoutSnippet(runningWorkout())}\n`;
+
+    expect(containsAnyWorkout(note)).toBe(true);
+    expect(shouldIncludeDaySummary(note)).toBe(false);
+  });
+
+  it("is false when the day sentence is there without a workout", () => {
+    // Covers a workout block deleted by hand while the sentence above it stayed.
+    expect(shouldIncludeDaySummary(`Recovery was 62%.\n${dayMarker("2026-08-09")}`)).toBe(
+      false
+    );
+  });
+
+  it("does not repeat the day sentence for a second workout on another day", () => {
+    const note = `${renderDaySummary(dayContext())}\n\n${renderWorkoutSnippet(runningWorkout())}`;
+
+    expect(shouldIncludeDaySummary(note)).toBe(false);
+  });
+});
+
+describe("renderWorkoutNote with a day context", () => {
+  it("puts the sentence between the frontmatter and the workout heading", () => {
+    const note = renderWorkoutNote(runningWorkout(), DEFAULT_TEMPLATE_OPTIONS, dayContext());
+    const lines = note.split("\n");
+
+    const frontmatterEnd = lines.indexOf("---", 1);
+    const sentence = lines.findIndex((l) => l.startsWith("Recovery that morning"));
+    const heading = lines.findIndex((l) => l.startsWith("### "));
+
+    expect(frontmatterEnd).toBeGreaterThan(0);
+    expect(sentence).toBeGreaterThan(frontmatterEnd);
+    expect(heading).toBeGreaterThan(sentence);
+  });
+
+  it("is unchanged when there is no day context to render", () => {
+    expect(renderWorkoutNote(runningWorkout(), DEFAULT_TEMPLATE_OPTIONS, null)).toBe(
+      renderWorkoutNote(runningWorkout())
+    );
   });
 });

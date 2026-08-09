@@ -1,9 +1,17 @@
 import { normalizePath } from "obsidian";
 import {
   DISTANCE_SPORT_IDS,
+  DayContext,
   Workout,
+  ZoneDuration,
+  asleepMs,
+  hasDayContext,
+  percentRecorded,
+  sleepNeededMs,
   sportEmoji,
   sportName,
+  totalZoneMs,
+  zoneDurations,
 } from "./models.ts";
 import {
   DistanceUnit,
@@ -28,6 +36,8 @@ export interface TemplateOptions {
   includeEmoji: boolean;
   includeZoneDurations: boolean;
   includeDataCompleteness: boolean;
+  /** Per-hour derived figures: calorie burn rate and strain rate. */
+  includeRates: boolean;
 }
 
 export const DEFAULT_TEMPLATE_OPTIONS: TemplateOptions = {
@@ -37,6 +47,7 @@ export const DEFAULT_TEMPLATE_OPTIONS: TemplateOptions = {
   includeEmoji: true,
   includeZoneDurations: true,
   includeDataCompleteness: true,
+  includeRates: true,
 };
 
 /** Sports where average speed reads better than pace. */
@@ -44,7 +55,8 @@ const SPEED_SPORT_IDS = new Set<number>([1, 28, 29, 57, 91, 92, 97, 99]);
 
 const METERS_PER_FOOT = 0.3048;
 
-const ZONE_LABELS: Array<[keyof ZoneDurationLike, string]> = [
+const ZONE_LABELS: Array<[keyof ZoneDuration, string]> = [
+  ["zone_zero_milli", "Zone 0 time"],
   ["zone_one_milli", "Zone 1 time"],
   ["zone_two_milli", "Zone 2 time"],
   ["zone_three_milli", "Zone 3 time"],
@@ -52,16 +64,15 @@ const ZONE_LABELS: Array<[keyof ZoneDurationLike, string]> = [
   ["zone_five_milli", "Zone 5 time"],
 ];
 
-interface ZoneDurationLike {
-  zone_zero_milli: number;
-  zone_one_milli: number;
-  zone_two_milli: number;
-  zone_three_milli: number;
-  zone_four_milli: number;
-  zone_five_milli: number;
-}
+/** Zones counted as hard effort for the "time in zone 3+" summary row. */
+const HARD_ZONE_KEYS: Array<keyof ZoneDuration> = [
+  "zone_three_milli",
+  "zone_four_milli",
+  "zone_five_milli",
+];
 
 const MARKER_PREFIX = "<!-- whoop-workout:";
+const DAY_MARKER_PREFIX = "<!-- whoop-day:";
 
 /**
  * Hidden tag identifying which workout a block came from. HTML comments do not
@@ -76,6 +87,132 @@ export function workoutMarker(id: string): string {
 /** True when a note already contains a block for this workout. */
 export function containsWorkout(content: string, id: string): boolean {
   return content.includes(workoutMarker(id));
+}
+
+/** True when a note already carries any workout this plugin wrote. */
+export function containsAnyWorkout(content: string): boolean {
+  return content.includes(MARKER_PREFIX);
+}
+
+/** Hidden tag marking the day-context sentence, so it is written only once. */
+export function dayMarker(date: string): string {
+  return `${DAY_MARKER_PREFIX} ${date.replace(/--+>/g, "")} -->`;
+}
+
+/** True when a note already carries a day-context sentence for any day. */
+export function containsAnyDaySummary(content: string): boolean {
+  return content.includes(DAY_MARKER_PREFIX);
+}
+
+/**
+ * Whether a note should get the day-context sentence along with this workout.
+ *
+ * It belongs to the note, not to the workout: the first WHOOP block on a page
+ * carries it and later ones do not, so a daily note that collects several
+ * workouts states the day's recovery and sleep once.
+ */
+export function shouldIncludeDaySummary(content: string): boolean {
+  return !containsAnyWorkout(content) && !containsAnyDaySummary(content);
+}
+
+/**
+ * The day's recovery, sleep and strain as prose.
+ *
+ * Deliberately sentences rather than table rows: none of this describes the
+ * workout it sits above, and folding it into that table would imply it did.
+ * Every clause is dropped when its number is missing, so a partially scored day
+ * still reads as English.
+ */
+export function renderDaySummary(context: DayContext): string {
+  if (!hasDayContext(context)) return "";
+
+  const sentences = [
+    recoverySentence(context),
+    sleepSentence(context),
+    strainSentence(context),
+  ].filter((s): s is string => s !== null);
+
+  if (sentences.length === 0) return "";
+  return `${sentences.join(" ")}\n${dayMarker(context.date)}`;
+}
+
+function recoverySentence(context: DayContext): string | null {
+  const score = context.recovery?.score;
+  if (!score) return null;
+
+  const clauses: string[] = [];
+  if (isPositive(score.resting_heart_rate)) {
+    clauses.push(`a resting heart rate of ${Math.round(score.resting_heart_rate)} bpm`);
+  }
+  if (isPositive(score.hrv_rmssd_milli)) {
+    clauses.push(`HRV of ${Math.round(score.hrv_rmssd_milli)} ms`);
+  }
+  if (isPositive(score.spo2_percentage)) {
+    clauses.push(`blood oxygen at ${Math.round(score.spo2_percentage)}%`);
+  }
+
+  if (!isPositive(score.recovery_score)) {
+    if (clauses.length === 0) return null;
+    return `WHOOP recorded ${joinClauses(clauses)} that morning.`;
+  }
+
+  const calibrating = score.user_calibrating
+    ? " WHOOP was still calibrating, so treat that figure loosely."
+    : "";
+  const detail = clauses.length > 0 ? `, with ${joinClauses(clauses)}` : "";
+  return `Recovery that morning was ${Math.round(score.recovery_score)}%${detail}.${calibrating}`;
+}
+
+function sleepSentence(context: DayContext): string | null {
+  const sleep = context.sleep;
+  if (!sleep?.score) return null;
+
+  const slept = asleepMs(sleep);
+  const needed = sleepNeededMs(sleep);
+  const performance = sleep.score.sleep_performance_percentage;
+  const efficiency = sleep.score.sleep_efficiency_percentage;
+
+  let opening: string;
+  if (slept !== null) {
+    opening = `The night before brought ${formatDuration(slept)} of sleep`;
+    if (needed !== null) {
+      opening += ` against a need of ${formatDuration(needed)}`;
+    }
+  } else if (isPositive(performance)) {
+    opening = `Sleep the night before scored ${Math.round(performance)}%`;
+  } else {
+    return null;
+  }
+
+  const tail: string[] = [];
+  if (slept !== null && isPositive(performance)) {
+    tail.push(`${Math.round(performance)}% sleep performance`);
+  }
+  if (isPositive(efficiency)) {
+    tail.push(`${Math.round(efficiency)}% efficiency`);
+  }
+  const disturbances = sleep.score.stage_summary?.disturbance_count;
+  if (Number.isFinite(disturbances) && (disturbances as number) > 0) {
+    tail.push(`${disturbances} disturbances`);
+  }
+
+  return tail.length > 0 ? `${opening} — ${joinClauses(tail)}.` : `${opening}.`;
+}
+
+function strainSentence(context: DayContext): string | null {
+  const strain = context.cycle?.score?.strain;
+  if (!isPositive(strain)) return null;
+  return `Day strain reached ${strain.toFixed(1)}.`;
+}
+
+/** "a, b and c" — an Oxford-comma-free list for prose. */
+function joinClauses(parts: string[]): string {
+  if (parts.length === 1) return parts[0];
+  return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+}
+
+function isPositive(value: number | undefined): value is number {
+  return Number.isFinite(value) && (value as number) > 0;
 }
 
 /**
@@ -164,24 +301,71 @@ function buildRows(
     rows.push(["Calories", `${Math.round(kilojoulesToKcal(score.kilojoule))} kcal`]);
   }
 
+  if (score.kilojoule > 0 && options.includeRates) {
+    const perHour = ratePerHour(kilojoulesToKcal(score.kilojoule), elapsed);
+    if (perHour !== null) rows.push(["Calorie rate", `${Math.round(perHour)} kcal/h`]);
+  }
+
+  if (options.includeRates && Number.isFinite(score.strain) && score.strain > 0) {
+    const perHour = ratePerHour(score.strain, elapsed);
+    if (perHour !== null) rows.push(["Strain rate", `${perHour.toFixed(1)} /h`]);
+  }
+
   if (score.altitude_gain_meter > 0) {
     rows.push(["Elevation gain", formatElevation(score.altitude_gain_meter, unit)]);
   }
 
-  if (options.includeZoneDurations && score.zone_duration) {
+  // Net change only earns a row when it says something the gain does not — on a
+  // loop it is ~0, and repeating the gain on an out-and-back is noise.
+  const net = score.altitude_change_meter;
+  if (
+    Number.isFinite(net) &&
+    Math.abs(net) >= 1 &&
+    Math.round(net) !== Math.round(score.altitude_gain_meter)
+  ) {
+    const sign = net > 0 ? "+" : "−";
+    rows.push(["Net elevation", `${sign}${formatElevation(Math.abs(net), unit)}`]);
+  }
+
+  const zones = zoneDurations(score);
+  if (options.includeZoneDurations && zones) {
+    const total = totalZoneMs(zones);
     for (const [key, label] of ZONE_LABELS) {
-      const ms = score.zone_duration[key];
+      const ms = zones[key];
       if (Number.isFinite(ms) && ms > 0) {
-        rows.push([label, formatDuration(ms)]);
+        rows.push([label, withShare(formatDuration(ms), ms, total)]);
       }
+    }
+
+    const hardMs = HARD_ZONE_KEYS.reduce((sum, key) => {
+      const ms = zones[key];
+      return Number.isFinite(ms) && ms > 0 ? sum + ms : sum;
+    }, 0);
+    if (hardMs > 0) {
+      rows.push(["Time in zone 3+", withShare(formatDuration(hardMs), hardMs, total)]);
     }
   }
 
-  if (options.includeDataCompleteness && Number.isFinite(score.percent_recorded)) {
-    rows.push(["Data completeness", `${Math.round(score.percent_recorded)}%`]);
+  const recorded = percentRecorded(score);
+  if (options.includeDataCompleteness && recorded !== null) {
+    rows.push(["Data completeness", `${Math.round(recorded)}%`]);
   }
 
   return rows;
+}
+
+/** "12 min (34%)" — the share is omitted when there is no total to divide by. */
+function withShare(text: string, ms: number, totalMs: number): string {
+  if (!Number.isFinite(totalMs) || totalMs <= 0) return text;
+  return `${text} (${Math.round((ms / totalMs) * 100)}%)`;
+}
+
+/** Converts a per-workout total into a per-hour rate. */
+function ratePerHour(value: number, elapsedMs: number): number | null {
+  if (!Number.isFinite(value) || !Number.isFinite(elapsedMs) || elapsedMs <= 0) {
+    return null;
+  }
+  return value / (elapsedMs / 3_600_000);
 }
 
 function formatElevation(meters: number, unit: DistanceUnit): string {
@@ -189,10 +373,16 @@ function formatElevation(meters: number, unit: DistanceUnit): string {
   return `${Math.round(meters)} m`;
 }
 
-/** Full note: YAML frontmatter for querying, then the same snippet as the body. */
+/**
+ * Full note: YAML frontmatter for querying, then the same snippet as the body.
+ *
+ * A new note is by definition the first WHOOP block on its page, so the day
+ * sentence goes in whenever there is a context to render.
+ */
 export function renderWorkoutNote(
   workout: Workout,
-  options: TemplateOptions = DEFAULT_TEMPLATE_OPTIONS
+  options: TemplateOptions = DEFAULT_TEMPLATE_OPTIONS,
+  context: DayContext | null = null
 ): string {
   const unit = options.distanceUnit;
   const elapsed = durationMs(workout.start, workout.end);
@@ -233,6 +423,10 @@ export function renderWorkoutNote(
   const lines = ["---"];
   for (const [key, value] of front) lines.push(`${key}: ${value}`);
   lines.push("tags:", "  - whoop", "  - workout", "---", "");
+
+  const summary = context ? renderDaySummary(context) : "";
+  if (summary) lines.push(summary, "");
+
   lines.push(renderWorkoutSnippet(workout, options), "");
 
   return lines.join("\n");

@@ -17,6 +17,9 @@ export interface WhoopWorkoutSettings {
   includeEmoji: boolean;
   includeZoneDurations: boolean;
   includeDataCompleteness: boolean;
+  includeRates: boolean;
+  /** Day recovery/sleep/strain sentence above the first workout in a note. */
+  includeDaySummary: boolean;
 
   defaultHeading: string;
   insertPosition: InsertPosition;
@@ -38,6 +41,8 @@ export const DEFAULT_SETTINGS: WhoopWorkoutSettings = {
   includeEmoji: true,
   includeZoneDurations: true,
   includeDataCompleteness: true,
+  includeRates: true,
+  includeDaySummary: true,
 
   defaultHeading: "## WHOOP",
   insertPosition: "bottom",
@@ -55,6 +60,7 @@ export function templateOptions(settings: WhoopWorkoutSettings): TemplateOptions
     includeEmoji: settings.includeEmoji,
     includeZoneDurations: settings.includeZoneDurations,
     includeDataCompleteness: settings.includeDataCompleteness,
+    includeRates: settings.includeRates,
   };
 }
 
@@ -89,7 +95,7 @@ export class WhoopWorkoutSettingTab extends PluginSettingTab {
 
     containerEl.createEl("p", {
       cls: "setting-item-description",
-      text: `Create an app at developer.whoop.com with the redirect URI ${REDIRECT_URI} and the scopes "offline" and "read:workout", then paste its credentials below.`,
+      text: `Create an app at developer.whoop.com with the redirect URI ${REDIRECT_URI} and the scopes "offline", "read:workout", "read:cycle", "read:recovery" and "read:sleep", then paste its credentials below.`,
     });
 
     new Setting(containerEl)
@@ -208,10 +214,34 @@ export class WhoopWorkoutSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Heart rate zone breakdown")
-      .setDesc("Add a row per heart rate zone with time spent in it.")
+      .setDesc(
+        "Add a row per heart rate zone with the time spent in it and its share of the workout, plus a combined zone 3+ total."
+      )
       .addToggle((toggle) =>
         toggle.setValue(settings.includeZoneDurations).onChange(async (value) => {
           settings.includeZoneDurations = value;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Per-hour rates")
+      .setDesc("Add calorie burn and strain expressed per hour.")
+      .addToggle((toggle) =>
+        toggle.setValue(settings.includeRates).onChange(async (value) => {
+          settings.includeRates = value;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Day context sentence")
+      .setDesc(
+        "Write the day's recovery, sleep and strain as a sentence above the first workout added to a note. Later workouts on the same note do not repeat it. Needs the cycle, recovery and sleep scopes — reconnect if you authorized before this setting existed."
+      )
+      .addToggle((toggle) =>
+        toggle.setValue(settings.includeDaySummary).onChange(async (value) => {
+          settings.includeDaySummary = value;
           await this.plugin.saveSettings();
         })
       );

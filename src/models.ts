@@ -20,12 +20,71 @@ export interface WorkoutScore {
   average_heart_rate: number;
   max_heart_rate: number;
   kilojoule: number;
-  /** 0–100. How much of the activity WHOOP actually captured. */
+  /**
+   * How much of the activity WHOOP actually captured. Responses have been seen
+   * using both a 0–100 percentage and a 0–1 fraction, so read it through
+   * {@link percentRecorded} rather than directly.
+   */
   percent_recorded: number;
   distance_meter: number;
   altitude_gain_meter: number;
+  /** Net change from start to finish; negative for a net descent. */
   altitude_change_meter: number;
-  zone_duration: ZoneDuration;
+  /** v2 spelling. */
+  zone_durations?: ZoneDuration;
+  /** v1 spelling. Still returned by some responses, so both are accepted. */
+  zone_duration?: ZoneDuration;
+}
+
+const ZONE_KEYS: Array<keyof ZoneDuration> = [
+  "zone_zero_milli",
+  "zone_one_milli",
+  "zone_two_milli",
+  "zone_three_milli",
+  "zone_four_milli",
+  "zone_five_milli",
+];
+
+/**
+ * Heart rate zone durations, under whichever key the response used.
+ *
+ * v2 renamed `zone_duration` to `zone_durations`, and reading only the old name
+ * silently dropped the whole breakdown. An object with nothing but zeros — which
+ * is what an unscored or partially recorded workout yields — counts as absent so
+ * callers do not render six empty rows.
+ */
+export function zoneDurations(score: WorkoutScore): ZoneDuration | null {
+  const zones = score.zone_durations ?? score.zone_duration;
+  if (!zones) return null;
+
+  const hasTime = ZONE_KEYS.some((key) => {
+    const ms = zones[key];
+    return Number.isFinite(ms) && ms > 0;
+  });
+  return hasTime ? zones : null;
+}
+
+/** Total milliseconds across every zone, including zone 0. */
+export function totalZoneMs(zones: ZoneDuration): number {
+  return ZONE_KEYS.reduce((sum, key) => {
+    const ms = zones[key];
+    return Number.isFinite(ms) && ms > 0 ? sum + ms : sum;
+  }, 0);
+}
+
+/**
+ * Normalizes `percent_recorded` to 0–100.
+ *
+ * The documented scale is 0–100, but real responses have carried a 0–1 fraction
+ * — a fully recorded run arriving as `1` and rendering as "1%". Anything at or
+ * below 1 is therefore read as a fraction. That does mistake a genuine 1% for
+ * 100%, which is an acceptable trade: a workout WHOOP captured 1% of does not
+ * reach a scored state with usable metrics anyway.
+ */
+export function percentRecorded(score: WorkoutScore): number | null {
+  const raw = score.percent_recorded;
+  if (!Number.isFinite(raw) || raw < 0) return null;
+  return raw > 0 && raw <= 1 ? raw * 100 : raw;
 }
 
 export interface Workout {
@@ -52,6 +111,135 @@ export interface Workout {
 export interface PaginatedResponse<T> {
   records: T[];
   next_token?: string | null;
+}
+
+/**
+ * Day-level records. Every score field is optional: WHOOP omits scores that are
+ * still pending, and the renderer drops any clause it has no number for rather
+ * than printing a blank.
+ */
+
+export interface CycleScore {
+  strain?: number;
+  kilojoule?: number;
+  average_heart_rate?: number;
+  max_heart_rate?: number;
+}
+
+export interface Cycle {
+  id: number;
+  start: string;
+  /** Absent while the cycle is still the current one. */
+  end?: string | null;
+  timezone_offset?: string;
+  score_state?: string;
+  score?: CycleScore;
+}
+
+export interface RecoveryScore {
+  /** True while WHOOP is still establishing a baseline; the score is unreliable. */
+  user_calibrating?: boolean;
+  recovery_score?: number;
+  resting_heart_rate?: number;
+  hrv_rmssd_milli?: number;
+  spo2_percentage?: number;
+  skin_temp_celsius?: number;
+}
+
+export interface Recovery {
+  cycle_id?: number;
+  sleep_id?: string;
+  score_state?: string;
+  score?: RecoveryScore;
+}
+
+export interface SleepStageSummary {
+  total_in_bed_time_milli?: number;
+  total_awake_time_milli?: number;
+  total_no_data_time_milli?: number;
+  total_light_sleep_time_milli?: number;
+  total_slow_wave_sleep_time_milli?: number;
+  total_rem_sleep_time_milli?: number;
+  sleep_cycle_count?: number;
+  disturbance_count?: number;
+}
+
+export interface SleepNeeded {
+  baseline_milli?: number;
+  need_from_sleep_debt_milli?: number;
+  need_from_recent_strain_milli?: number;
+  need_from_recent_nap_milli?: number;
+}
+
+export interface SleepScore {
+  stage_summary?: SleepStageSummary;
+  sleep_needed?: SleepNeeded;
+  respiratory_rate?: number;
+  sleep_performance_percentage?: number;
+  sleep_consistency_percentage?: number;
+  sleep_efficiency_percentage?: number;
+}
+
+export interface Sleep {
+  id: string;
+  start: string;
+  end: string;
+  timezone_offset?: string;
+  nap?: boolean;
+  score_state?: string;
+  score?: SleepScore;
+}
+
+/** The day a workout happened in, as far as WHOOP knows. Any part may be absent. */
+export interface DayContext {
+  /** Local calendar day, YYYY-MM-DD — identifies the summary in a note. */
+  date: string;
+  cycle: Cycle | null;
+  recovery: Recovery | null;
+  sleep: Sleep | null;
+}
+
+/** True when there is at least one number worth writing a sentence about. */
+export function hasDayContext(context: DayContext | null): boolean {
+  if (!context) return false;
+  return Boolean(context.cycle?.score || context.recovery?.score || context.sleep?.score);
+}
+
+/**
+ * Total time actually asleep: time in bed less time awake.
+ *
+ * WHOOP reports the stages rather than a single total, and in-bed time on its
+ * own overstates a night with long wakes in it.
+ */
+export function asleepMs(sleep: Sleep): number | null {
+  const stages = sleep.score?.stage_summary;
+  if (!stages) return null;
+  const inBed = stages.total_in_bed_time_milli;
+  if (!Number.isFinite(inBed) || (inBed ?? 0) <= 0) return null;
+  const awake = Number.isFinite(stages.total_awake_time_milli)
+    ? (stages.total_awake_time_milli as number)
+    : 0;
+  return Math.max(0, (inBed as number) - awake);
+}
+
+/** Sleep WHOOP judged was needed, summing the baseline and its adjustments. */
+export function sleepNeededMs(sleep: Sleep): number | null {
+  const needed = sleep.score?.sleep_needed;
+  if (!needed) return null;
+  const parts = [
+    needed.baseline_milli,
+    needed.need_from_sleep_debt_milli,
+    needed.need_from_recent_strain_milli,
+    needed.need_from_recent_nap_milli,
+  ];
+  let total = 0;
+  let sawBaseline = false;
+  for (const part of parts) {
+    if (!Number.isFinite(part)) continue;
+    total += part as number;
+    sawBaseline = true;
+  }
+  return sawBaseline && total > 0 ? total : null;
 }
 
 /** Human-readable name for a WHOOP sport_id. */
