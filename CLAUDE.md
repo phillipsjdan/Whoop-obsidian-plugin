@@ -40,11 +40,19 @@ own `required` lists are not a guarantee — it marks `percent_recorded` require
 and documents it as 0–100, and the 0–1 fractions that forced `percentRecorded`
 into existence were real responses.
 
-**`sport_id` and `v1_id` were sunset on 09/01/2025.** The spec marks both
-optional and says they "will not exist past" that date, while `sport_name` is
-required. `models.ts` still types `sport_id` as required and keys the emoji,
-pace and frontmatter off it, so those degrade silently once WHOOP stops sending
-it. Unverified against a live response — see the note in `models.ts`.
+**`sport_id` outlived its own sunset date.** The spec marks it optional and says
+it "will not exist past" 09/01/2025, with `sport_name` required instead — but a
+note rendered on 2026-08-09 carried the 🏃 heading, and `sportEmoji` falls back
+to 💪 for an id it does not know. So WHOOP still sends it, and the spec's
+sunset dates are aspirational. Do not drop `sport_id` handling on the strength
+of the spec alone.
+
+If it does eventually go, nothing crashes: `sportName` falls through to
+`sport_name`, and the pace clause still renders, because the speed branch is
+only *chosen* when `SPEED_SPORT_IDS.has(sport_id)`. What breaks is quieter —
+every heading emoji becomes 💪, speed sports get a pace instead of a speed in
+both the table and the frontmatter, the "Distance: not recorded" line for a
+GPS-less run disappears, and the frontmatter writes `sport_id: undefined`.
 
 **Scope spellings are not uniform.** It is `read:cycles` (plural) but
 `read:recovery`, `read:sleep`, `read:workout`, `read:body_measurement`

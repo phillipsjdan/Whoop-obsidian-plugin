@@ -100,13 +100,11 @@ export interface Workout {
   /** UTC offset the workout was recorded in, e.g. "-07:00". */
   timezone_offset: string;
   /**
-   * WHOOP's spec marks this optional and dates its removal to 09/01/2025, while
-   * `sport_name` is required. It is typed required here because the emoji, the
-   * pace clause and the frontmatter row are all keyed off it, and nothing has
-   * confirmed whether live responses still carry it. If it goes, none of those
-   * crash — the name falls through to `sport_name`, the emoji drops to the
-   * default and the pace clause is skipped — but they quietly stop working, so
-   * a live response is worth checking before trusting a note's pace line.
+   * WHOOP's spec marks this optional and dates its removal to 09/01/2025, but a
+   * note rendered on 2026-08-09 still had a sport-specific emoji in its heading,
+   * which is only reachable through this field. It is typed required on that
+   * evidence. Should it ever actually go, the fallout is silent rather than
+   * fatal — see the note in CLAUDE.md.
    */
   sport_id: number;
   /** May be absent or empty; fall back to SPORT_NAMES[sport_id]. */
