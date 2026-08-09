@@ -1,10 +1,9 @@
 name: CI
 
+# Pull requests only. A merge into main is covered by the release workflow,
+# which runs these same checks before it will tag anything.
 on:
   pull_request:
-    # The repository has no default branch yet; cover whichever name is used.
-    branches: [main, master]
-  push:
     branches: [main, master]
   workflow_dispatch:
 
