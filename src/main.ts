@@ -177,9 +177,10 @@ export default class WhoopWorkoutPlugin extends Plugin {
     // reason costs no security.
     if (!params.state && params.error) {
       throw new Error(
-        `WHOOP declined the authorization request: ${
-          params.error_description ?? params.error
-        }. If it mentions scopes, your developer app is missing one the plugin asks for — add read:workout, read:cycle, read:recovery and read:sleep to it at developer.whoop.com, save, then try again.`
+        `WHOOP declined the authorization request: ${describeError(params)}. ` +
+          "If it mentions scopes, your developer app is missing one the plugin asks " +
+          "for — add read:workout, read:cycles, read:recovery and read:sleep to it " +
+          "at developer.whoop.com, save, then try again."
       );
     }
 
@@ -188,9 +189,7 @@ export default class WhoopWorkoutPlugin extends Plugin {
     // Past the state check, this callback is provably the one we started.
     if (params.error) {
       this.pendingAuth = null;
-      throw new Error(
-        `WHOOP authorization was declined: ${params.error_description ?? params.error}`
-      );
+      throw new Error(`WHOOP authorization was declined: ${describeError(params)}`);
     }
 
     if (!params.code) {
@@ -523,4 +522,19 @@ function defaultAppendLevel(target: HeadingTarget, snippetLevel: number): number
 
 function messageOf(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
+}
+
+/**
+ * WHOOP's reason for refusing, in prose.
+ *
+ * `error_description` is form-encoded, so its spaces arrive as `+`. Obsidian's
+ * protocol handler percent-decodes the parameters but leaves those alone, and
+ * "The+requested+scope+is+invalid" is not a sentence anyone should be shown.
+ */
+export function describeError(params: {
+  error?: string;
+  error_description?: string;
+}): string {
+  const raw = params.error_description ?? params.error ?? "no reason given";
+  return raw.replace(/\+/g, " ").trim();
 }
