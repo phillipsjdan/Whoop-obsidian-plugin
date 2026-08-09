@@ -1,0 +1,50 @@
+version: 2
+
+# Everything here is a devDependency — the plugin itself ships with no runtime
+# dependencies — so these updates change the toolchain that builds and checks
+# main.js, never what a user installs.
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    # A merge into main cuts a release (see .github/workflows/release.yml), and
+    # scripts/version.mjs reads the merge commit — which for a squash merge is
+    # the pull request title. Putting the marker in the prefix means a toolchain
+    # bump lands without publishing a version whose only change is a build tool.
+    # Drop "[skip release]" here if you would rather every bump be released.
+    commit-message:
+      prefix: "build(deps) [skip release]"
+      include: scope
+    groups:
+      # One pull request for the lint/typecheck/test toolchain rather than four.
+      # They move together and CI either passes on the set or it does not.
+      dev-tooling:
+        patterns:
+          - "@types/*"
+          - "@typescript-eslint/*"
+          - eslint
+          - eslint-plugin-obsidianmd
+          - typescript
+          - vitest
+        update-types:
+          - minor
+          - patch
+    ignore:
+      # Pinned to whatever Obsidian currently ships; it has no semver releases
+      # on npm that Dependabot can reason about.
+      - dependency-name: obsidian
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "ci(actions) [skip release]"
+    groups:
+      actions:
+        patterns:
+          - "*"

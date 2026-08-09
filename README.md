@@ -269,6 +269,8 @@ Layout:
 | `src/ui/` | Picker, prompts, connect modal |
 | `src/main.ts` | Plugin entry point, commands, protocol handler |
 
+**Dependencies are watched by Dependabot** (`.github/dependabot.yml`), weekly, over both npm and the GitHub Actions used by the workflows. Everything in `package.json` is a devDependency — the plugin ships with none — so these bumps only ever move the toolchain that builds and checks `main.js`. The lint/typecheck/test tools are grouped into a single pull request, and both ecosystems carry `[skip release]` in their commit prefix, so merging a toolchain bump does not publish a version whose only change is a build tool. Remove that marker from the config if you would rather every bump be released.
+
 `src/insert.ts` is the riskiest code here and is tested accordingly: heading missing, heading at end of file, heading immediately followed by another heading, empty file, nested subsections, setext headings (as both target and section boundary), code fences, frontmatter, CRLF, and blank-line normalization.
 
 CI runs the typecheck, both lint passes, the tests and a production build for every pull request into `main`/`master`. The Node version comes from `.nvmrc` (22) so CI and local development cannot drift; there is no version matrix, because the source uses no Node APIs beyond the global `crypto` and esbuild emits the same Electron-targeted bundle whichever Node runs it.
