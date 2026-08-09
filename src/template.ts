@@ -2,8 +2,12 @@ import { normalizePath } from "obsidian";
 import {
   DISTANCE_SPORT_IDS,
   Workout,
+  ZoneDuration,
+  percentRecorded,
   sportEmoji,
   sportName,
+  totalZoneMs,
+  zoneDurations,
 } from "./models.ts";
 import {
   DistanceUnit,
@@ -28,6 +32,8 @@ export interface TemplateOptions {
   includeEmoji: boolean;
   includeZoneDurations: boolean;
   includeDataCompleteness: boolean;
+  /** Per-hour derived figures: calorie burn rate and strain rate. */
+  includeRates: boolean;
 }
 
 export const DEFAULT_TEMPLATE_OPTIONS: TemplateOptions = {
@@ -37,6 +43,7 @@ export const DEFAULT_TEMPLATE_OPTIONS: TemplateOptions = {
   includeEmoji: true,
   includeZoneDurations: true,
   includeDataCompleteness: true,
+  includeRates: true,
 };
 
 /** Sports where average speed reads better than pace. */
@@ -44,7 +51,8 @@ const SPEED_SPORT_IDS = new Set<number>([1, 28, 29, 57, 91, 92, 97, 99]);
 
 const METERS_PER_FOOT = 0.3048;
 
-const ZONE_LABELS: Array<[keyof ZoneDurationLike, string]> = [
+const ZONE_LABELS: Array<[keyof ZoneDuration, string]> = [
+  ["zone_zero_milli", "Zone 0 time"],
   ["zone_one_milli", "Zone 1 time"],
   ["zone_two_milli", "Zone 2 time"],
   ["zone_three_milli", "Zone 3 time"],
@@ -52,14 +60,12 @@ const ZONE_LABELS: Array<[keyof ZoneDurationLike, string]> = [
   ["zone_five_milli", "Zone 5 time"],
 ];
 
-interface ZoneDurationLike {
-  zone_zero_milli: number;
-  zone_one_milli: number;
-  zone_two_milli: number;
-  zone_three_milli: number;
-  zone_four_milli: number;
-  zone_five_milli: number;
-}
+/** Zones counted as hard effort for the "time in zone 3+" summary row. */
+const HARD_ZONE_KEYS: Array<keyof ZoneDuration> = [
+  "zone_three_milli",
+  "zone_four_milli",
+  "zone_five_milli",
+];
 
 const MARKER_PREFIX = "<!-- whoop-workout:";
 
@@ -164,24 +170,71 @@ function buildRows(
     rows.push(["Calories", `${Math.round(kilojoulesToKcal(score.kilojoule))} kcal`]);
   }
 
+  if (score.kilojoule > 0 && options.includeRates) {
+    const perHour = ratePerHour(kilojoulesToKcal(score.kilojoule), elapsed);
+    if (perHour !== null) rows.push(["Calorie rate", `${Math.round(perHour)} kcal/h`]);
+  }
+
+  if (options.includeRates && Number.isFinite(score.strain) && score.strain > 0) {
+    const perHour = ratePerHour(score.strain, elapsed);
+    if (perHour !== null) rows.push(["Strain rate", `${perHour.toFixed(1)} /h`]);
+  }
+
   if (score.altitude_gain_meter > 0) {
     rows.push(["Elevation gain", formatElevation(score.altitude_gain_meter, unit)]);
   }
 
-  if (options.includeZoneDurations && score.zone_duration) {
+  // Net change only earns a row when it says something the gain does not — on a
+  // loop it is ~0, and repeating the gain on an out-and-back is noise.
+  const net = score.altitude_change_meter;
+  if (
+    Number.isFinite(net) &&
+    Math.abs(net) >= 1 &&
+    Math.round(net) !== Math.round(score.altitude_gain_meter)
+  ) {
+    const sign = net > 0 ? "+" : "−";
+    rows.push(["Net elevation", `${sign}${formatElevation(Math.abs(net), unit)}`]);
+  }
+
+  const zones = zoneDurations(score);
+  if (options.includeZoneDurations && zones) {
+    const total = totalZoneMs(zones);
     for (const [key, label] of ZONE_LABELS) {
-      const ms = score.zone_duration[key];
+      const ms = zones[key];
       if (Number.isFinite(ms) && ms > 0) {
-        rows.push([label, formatDuration(ms)]);
+        rows.push([label, withShare(formatDuration(ms), ms, total)]);
       }
+    }
+
+    const hardMs = HARD_ZONE_KEYS.reduce((sum, key) => {
+      const ms = zones[key];
+      return Number.isFinite(ms) && ms > 0 ? sum + ms : sum;
+    }, 0);
+    if (hardMs > 0) {
+      rows.push(["Time in zone 3+", withShare(formatDuration(hardMs), hardMs, total)]);
     }
   }
 
-  if (options.includeDataCompleteness && Number.isFinite(score.percent_recorded)) {
-    rows.push(["Data completeness", `${Math.round(score.percent_recorded)}%`]);
+  const recorded = percentRecorded(score);
+  if (options.includeDataCompleteness && recorded !== null) {
+    rows.push(["Data completeness", `${Math.round(recorded)}%`]);
   }
 
   return rows;
+}
+
+/** "12 min (34%)" — the share is omitted when there is no total to divide by. */
+function withShare(text: string, ms: number, totalMs: number): string {
+  if (!Number.isFinite(totalMs) || totalMs <= 0) return text;
+  return `${text} (${Math.round((ms / totalMs) * 100)}%)`;
+}
+
+/** Converts a per-workout total into a per-hour rate. */
+function ratePerHour(value: number, elapsedMs: number): number | null {
+  if (!Number.isFinite(value) || !Number.isFinite(elapsedMs) || elapsedMs <= 0) {
+    return null;
+  }
+  return value / (elapsedMs / 3_600_000);
 }
 
 function formatElevation(meters: number, unit: DistanceUnit): string {

@@ -17,6 +17,7 @@ export interface WhoopWorkoutSettings {
   includeEmoji: boolean;
   includeZoneDurations: boolean;
   includeDataCompleteness: boolean;
+  includeRates: boolean;
 
   defaultHeading: string;
   insertPosition: InsertPosition;
@@ -38,6 +39,7 @@ export const DEFAULT_SETTINGS: WhoopWorkoutSettings = {
   includeEmoji: true,
   includeZoneDurations: true,
   includeDataCompleteness: true,
+  includeRates: true,
 
   defaultHeading: "## WHOOP",
   insertPosition: "bottom",
@@ -55,6 +57,7 @@ export function templateOptions(settings: WhoopWorkoutSettings): TemplateOptions
     includeEmoji: settings.includeEmoji,
     includeZoneDurations: settings.includeZoneDurations,
     includeDataCompleteness: settings.includeDataCompleteness,
+    includeRates: settings.includeRates,
   };
 }
 
@@ -208,10 +211,22 @@ export class WhoopWorkoutSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Heart rate zone breakdown")
-      .setDesc("Add a row per heart rate zone with time spent in it.")
+      .setDesc(
+        "Add a row per heart rate zone with the time spent in it and its share of the workout, plus a combined zone 3+ total."
+      )
       .addToggle((toggle) =>
         toggle.setValue(settings.includeZoneDurations).onChange(async (value) => {
           settings.includeZoneDurations = value;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Per-hour rates")
+      .setDesc("Add calorie burn and strain expressed per hour.")
+      .addToggle((toggle) =>
+        toggle.setValue(settings.includeRates).onChange(async (value) => {
+          settings.includeRates = value;
           await this.plugin.saveSettings();
         })
       );

@@ -22,7 +22,7 @@ export function workoutScore(overrides: Partial<WorkoutScore> = {}): WorkoutScor
     distance_meter: 8020,
     altitude_gain_meter: 0,
     altitude_change_meter: 0,
-    zone_duration: zoneDuration({
+    zone_durations: zoneDuration({
       zone_two_milli: 900_000,
       zone_three_milli: 1_140_000,
       zone_four_milli: 300_000,
@@ -62,7 +62,7 @@ export function cyclingWorkout(overrides: Partial<Workout> = {}): Workout {
       distance_meter: 40_000,
       altitude_gain_meter: 610,
       percent_recorded: 100,
-      zone_duration: zoneDuration({ zone_three_milli: 3_600_000 }),
+      zone_durations: zoneDuration({ zone_three_milli: 3_600_000 }),
     }),
     ...overrides,
   };
@@ -83,7 +83,7 @@ export function liftingWorkout(overrides: Partial<Workout> = {}): Workout {
       distance_meter: 0,
       kilojoule: 1200,
       percent_recorded: 100,
-      zone_duration: zoneDuration({ zone_one_milli: 2_400_000 }),
+      zone_durations: zoneDuration({ zone_one_milli: 2_400_000 }),
     }),
     ...overrides,
   };

@@ -80,10 +80,13 @@ Suggests a path from the workout's date and sport (both the folder and the filen
 | Avg HR | 148 bpm |
 | Max HR | 167 bpm |
 | Calories | 612 kcal |
-| Zone 2 time | 15 min |
-| Zone 3 time | 19 min |
-| Zone 4 time | 5 min |
-| Zone 5 time | 3 min |
+| Calorie rate | 874 kcal/h |
+| Strain rate | 17.7 /h |
+| Zone 2 time | 15 min (36%) |
+| Zone 3 time | 19 min (45%) |
+| Zone 4 time | 5 min (12%) |
+| Zone 5 time | 3 min (7%) |
+| Time in zone 3+ | 27 min (64%) |
 | Data completeness | 98% |
 <!-- whoop-workout: b5f2c1a0-1111-4a2b-9c3d-000000000001 -->
 ```
@@ -93,7 +96,10 @@ The block is self-contained: one heading, one table, no navigation links or day-
 Details:
 
 - **Pace** is computed (duration ÷ distance) because WHOOP does not report it. Cycling and other wheeled/downhill sports get **Avg speed** instead.
-- **Heart-rate zone rows** and **data completeness** are both surfaced here and both can be switched off in settings. Zones with no time in them are omitted.
+- **Heart-rate zone rows** carry both the time and its share of the workout, followed by a combined **time in zone 3+**. Zones with no time in them are omitted, and the whole block can be switched off in settings. WHOOP returns these under `zone_durations` on v2 and `zone_duration` on v1; both are read.
+- **Per-hour rates** (calorie burn, strain) make workouts of different lengths comparable. Strain is a logarithmic 0–21 score, so its rate is a rough intensity signal rather than a physical quantity. Off via settings.
+- **Net elevation** appears alongside the gain only when the two differ — on a loop that returns to its start, the gain already tells the whole story.
+- **Data completeness** normalizes `percent_recorded`, which arrives as a 0–100 percentage in some responses and a 0–1 fraction in others. Can be switched off.
 - **Timestamps** are rendered in the workout's own time zone (from `timezone_offset`), not the reader's — a 7 am run reads as 7 am no matter where you open the note.
 - **Distance, pace and elevation** follow the km/miles setting (elevation switches to feet with miles).
 - A **workout WHOOP has not scored yet** still renders: you get the duration and a `_Score state: PENDING_SCORE._` line rather than a half-empty table.
@@ -133,7 +139,8 @@ tags:
 | Date format | `YYYY-MM-DD HH:mm` | Tokens: `YYYY YY MMMM MMM MM DD ddd HH mm ss` |
 | Heading level | `###` | Level of the workout block's own heading |
 | Sport emoji | on | Emoji prefix on the heading |
-| Heart rate zone breakdown | on | One row per non-empty zone |
+| Heart rate zone breakdown | on | One row per non-empty zone, with its share, plus a zone 3+ total |
+| Per-hour rates | on | Calorie burn and strain per hour |
 | Data completeness | on | `percent_recorded` row |
 | Default heading | `## WHOOP` | Pre-filled in the heading prompt |
 | Position within the section | End of the section | Or directly under the heading |
