@@ -19,13 +19,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # One version, read from .nvmrc so CI and local development cannot drift.
       # A matrix would buy nothing: the source touches no Node APIs beyond the
       # global crypto, and esbuild emits the same Electron-targeted bundle
       # whichever Node runs it.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: npm
