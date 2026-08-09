@@ -119,23 +119,6 @@ export interface PaginatedResponse<T> {
  * than printing a blank.
  */
 
-export interface CycleScore {
-  strain?: number;
-  kilojoule?: number;
-  average_heart_rate?: number;
-  max_heart_rate?: number;
-}
-
-export interface Cycle {
-  id: number;
-  start: string;
-  /** Absent while the cycle is still the current one. */
-  end?: string | null;
-  timezone_offset?: string;
-  score_state?: string;
-  score?: CycleScore;
-}
-
 export interface RecoveryScore {
   /** True while WHOOP is still establishing a baseline; the score is unreliable. */
   user_calibrating?: boolean;
@@ -190,11 +173,18 @@ export interface Sleep {
   score?: SleepScore;
 }
 
-/** The day a workout happened in, as far as WHOOP knows. Any part may be absent. */
+/**
+ * The day a workout happened in, as far as WHOOP knows. Either part may be
+ * absent.
+ *
+ * Day strain is deliberately not here. The cycle endpoint reports strain
+ * accumulated so far, not the day's total or the app's strain target, so for a
+ * workout filed the same day it is a snapshot that is stale by the time it is
+ * read — and reading like a settled figure is worse than saying nothing.
+ */
 export interface DayContext {
   /** Local calendar day, YYYY-MM-DD — identifies the summary in a note. */
   date: string;
-  cycle: Cycle | null;
   recovery: Recovery | null;
   sleep: Sleep | null;
 }
@@ -202,7 +192,7 @@ export interface DayContext {
 /** True when there is at least one number worth writing a sentence about. */
 export function hasDayContext(context: DayContext | null): boolean {
   if (!context) return false;
-  return Boolean(context.cycle?.score || context.recovery?.score || context.sleep?.score);
+  return Boolean(context.recovery?.score || context.sleep?.score);
 }
 
 /**

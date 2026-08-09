@@ -447,7 +447,7 @@ describe("normalizeNotePath", () => {
 });
 
 describe("renderDaySummary", () => {
-  it("states recovery, sleep and day strain as prose, not table rows", () => {
+  it("states recovery and sleep as prose, not table rows", () => {
     const summary = renderDaySummary(dayContext());
 
     expect(summary).toBe(
@@ -455,11 +455,17 @@ describe("renderDaySummary", () => {
         "Recovery that morning was 62%, with a resting heart rate of 48 bpm, " +
           "HRV of 78 ms and blood oxygen at 96%. The night before brought " +
           "7 h 12 min of sleep against a need of 8 h 22 min — 86% sleep " +
-          "performance, 93% efficiency and 9 disturbances. Day strain reached 14.2.",
+          "performance, 93% efficiency and 9 disturbances.",
         "<!-- whoop-day: 2026-08-09 -->",
       ].join("\n")
     );
     expect(summary).not.toContain("|");
+  });
+
+  it("never quotes day strain, which is a running total rather than a figure", () => {
+    // The cycle endpoint reports strain accumulated so far, so on a workout
+    // filed the same day it would be stale the moment it was written.
+    expect(renderDaySummary(dayContext())).not.toMatch(/strain/i);
   });
 
   it("counts sleep as time in bed less time awake", () => {
@@ -468,7 +474,7 @@ describe("renderDaySummary", () => {
   });
 
   it("drops the clauses it has no numbers for", () => {
-    const summary = renderDaySummary(dayContext({ sleep: null, cycle: null }));
+    const summary = renderDaySummary(dayContext({ sleep: null }));
 
     expect(summary).toContain("Recovery that morning was 62%");
     expect(summary).not.toContain("night before");
@@ -479,7 +485,6 @@ describe("renderDaySummary", () => {
     const summary = renderDaySummary(
       dayContext({
         sleep: null,
-        cycle: null,
         recovery: recovery({ score: { recovery_score: 55, user_calibrating: true } }),
       })
     );
@@ -491,7 +496,6 @@ describe("renderDaySummary", () => {
     const summary = renderDaySummary(
       dayContext({
         recovery: null,
-        cycle: null,
         sleep: sleep({ score: { sleep_performance_percentage: 88 } }),
       })
     );
@@ -500,7 +504,7 @@ describe("renderDaySummary", () => {
   });
 
   it("renders nothing at all when the day has no scores", () => {
-    const empty = { date: "2026-08-09", cycle: null, recovery: null, sleep: null };
+    const empty = { date: "2026-08-09", recovery: null, sleep: null };
     expect(renderDaySummary(empty)).toBe("");
   });
 });

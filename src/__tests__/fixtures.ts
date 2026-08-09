@@ -1,5 +1,4 @@
 import {
-  Cycle,
   DayContext,
   Recovery,
   Sleep,
@@ -97,19 +96,6 @@ export function liftingWorkout(overrides: Partial<Workout> = {}): Workout {
   };
 }
 
-/** Day strain of 14.2 for the cycle starting 2026-08-09 local. */
-export function cycle(overrides: Partial<Cycle> = {}): Cycle {
-  return {
-    id: 93845,
-    start: "2026-08-09T11:00:00.000Z",
-    end: "2026-08-10T11:00:00.000Z",
-    timezone_offset: "-07:00",
-    score_state: "SCORED",
-    score: { strain: 14.2, kilojoule: 9800, average_heart_rate: 74, max_heart_rate: 180 },
-    ...overrides,
-  };
-}
-
 export function recovery(overrides: Partial<Recovery> = {}): Recovery {
   return {
     cycle_id: 93845,
@@ -164,7 +150,6 @@ export function sleep(overrides: Partial<Sleep> = {}): Sleep {
 export function dayContext(overrides: Partial<DayContext> = {}): DayContext {
   return {
     date: "2026-08-09",
-    cycle: cycle(),
     recovery: recovery(),
     sleep: sleep(),
     ...overrides,

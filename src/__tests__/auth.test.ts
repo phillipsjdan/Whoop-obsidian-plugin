@@ -31,7 +31,7 @@ describe("buildAuthUrl", () => {
     const params = new URL(url).searchParams;
 
     expect(params.get("scope")).toBe(
-      "offline read:workout read:cycles read:recovery read:sleep"
+      "offline read:workout read:recovery read:sleep"
     );
     // Read-only, and nothing identifying: the plugin never needs who you are or
     // what you weigh.

@@ -1,6 +1,5 @@
 import { ApiClient, NotFoundError } from "./client.ts";
 import {
-  Cycle,
   DayContext,
   PaginatedResponse,
   Recovery,
@@ -83,10 +82,6 @@ export async function getWorkoutsForDay(
     .sort((a, b) => new Date(b.start).getTime() - new Date(a.start).getTime());
 }
 
-export function getCycles(client: ApiClient, start: Date, end: Date): Promise<Cycle[]> {
-  return fetchPaginated<Cycle>(client, "/cycle", start, end);
-}
-
 export function getRecoveries(
   client: ApiClient,
   start: Date,
@@ -100,7 +95,7 @@ export function getSleeps(client: ApiClient, start: Date, end: Date): Promise<Sl
 }
 
 /**
- * Gathers the cycle, recovery and sleep behind a given local day.
+ * Gathers the recovery and sleep behind a given local day.
  *
  * Each part is fetched independently and a failure yields null rather than
  * throwing. This data decorates a workout; it is never the reason the user ran
@@ -115,15 +110,13 @@ export async function getDayContext(
   // Sleep for "this day" began the evening before, so the window opens early.
   const sleepStart = addLocalDays(start, -1);
 
-  const [cycles, recoveries, sleeps] = await Promise.all([
-    optional(() => getCycles(client, start, end), "cycle"),
+  const [recoveries, sleeps] = await Promise.all([
     optional(() => getRecoveries(client, start, end), "recovery"),
     optional(() => getSleeps(client, sleepStart, end), "sleep"),
   ]);
 
   return {
     date: formatLocalDate(date),
-    cycle: pickCycle(cycles, start, end),
     recovery: recoveries[0] ?? null,
     sleep: pickSleep(sleeps, start, end),
   };
@@ -139,15 +132,6 @@ async function optional<T>(run: () => Promise<T[]>, label: string): Promise<T[]>
     console.warn(`[WHOOP workout insert] could not load ${label} for the day`, e);
     return [];
   }
-}
-
-/** The cycle that starts within the day, falling back to whatever came back. */
-function pickCycle(cycles: Cycle[], start: Date, end: Date): Cycle | null {
-  const withinDay = cycles.find((c) => {
-    const t = new Date(c.start).getTime();
-    return t >= start.getTime() && t < end.getTime();
-  });
-  return withinDay ?? cycles[0] ?? null;
 }
 
 /**

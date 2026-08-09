@@ -179,7 +179,7 @@ export default class WhoopWorkoutPlugin extends Plugin {
       throw new Error(
         `WHOOP declined the authorization request: ${describeError(params)}. ` +
           "If it mentions scopes, your developer app is missing one the plugin asks " +
-          "for — add read:workout, read:cycles, read:recovery and read:sleep to it " +
+          "for — add read:workout, read:recovery and read:sleep to it " +
           "at developer.whoop.com, save, then try again."
       );
     }

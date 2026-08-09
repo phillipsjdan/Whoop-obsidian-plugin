@@ -18,7 +18,7 @@ export interface WhoopWorkoutSettings {
   includeZoneDurations: boolean;
   includeDataCompleteness: boolean;
   includeRates: boolean;
-  /** Day recovery/sleep/strain sentence above the first workout in a note. */
+  /** Day recovery/sleep sentence above the first workout in a note. */
   includeDaySummary: boolean;
 
   defaultHeading: string;
@@ -95,7 +95,7 @@ export class WhoopWorkoutSettingTab extends PluginSettingTab {
 
     containerEl.createEl("p", {
       cls: "setting-item-description",
-      text: `Create an app at developer.whoop.com with the redirect URI ${REDIRECT_URI} and the scopes "offline", "read:workout", "read:cycles", "read:recovery" and "read:sleep", then paste its credentials below.`,
+      text: `Create an app at developer.whoop.com with the redirect URI ${REDIRECT_URI} and the scopes "offline", "read:workout", "read:recovery" and "read:sleep", then paste its credentials below.`,
     });
 
     new Setting(containerEl)
@@ -237,7 +237,7 @@ export class WhoopWorkoutSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Day context sentence")
       .setDesc(
-        "Write the day's recovery, sleep and strain as a sentence above the first workout added to a note. Later workouts on the same note do not repeat it. Needs the cycle, recovery and sleep scopes — reconnect if you authorized before this setting existed."
+        "Write the day's recovery and sleep as a sentence above the first workout added to a note. Later workouts on the same note do not repeat it. Needs the recovery and sleep scopes — reconnect if you authorized before this setting existed."
       )
       .addToggle((toggle) =>
         toggle.setValue(settings.includeDaySummary).onChange(async (value) => {

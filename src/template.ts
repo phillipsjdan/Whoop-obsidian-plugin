@@ -116,21 +116,22 @@ export function shouldIncludeDaySummary(content: string): boolean {
 }
 
 /**
- * The day's recovery, sleep and strain as prose.
+ * The day's recovery and sleep as prose.
  *
  * Deliberately sentences rather than table rows: none of this describes the
  * workout it sits above, and folding it into that table would imply it did.
  * Every clause is dropped when its number is missing, so a partially scored day
  * still reads as English.
+ *
+ * Both figures are settled by the time any workout exists to write them against
+ * — WHOOP scores them once in the morning and they do not move.
  */
 export function renderDaySummary(context: DayContext): string {
   if (!hasDayContext(context)) return "";
 
-  const sentences = [
-    recoverySentence(context),
-    sleepSentence(context),
-    strainSentence(context),
-  ].filter((s): s is string => s !== null);
+  const sentences = [recoverySentence(context), sleepSentence(context)].filter(
+    (s): s is string => s !== null
+  );
 
   if (sentences.length === 0) return "";
   return `${sentences.join(" ")}\n${dayMarker(context.date)}`;
@@ -197,12 +198,6 @@ function sleepSentence(context: DayContext): string | null {
   }
 
   return tail.length > 0 ? `${opening} — ${joinClauses(tail)}.` : `${opening}.`;
-}
-
-function strainSentence(context: DayContext): string | null {
-  const strain = context.cycle?.score?.strain;
-  if (!isPositive(strain)) return null;
-  return `Day strain reached ${strain.toFixed(1)}.`;
 }
 
 /** "a, b and c" — an Oxford-comma-free list for prose. */

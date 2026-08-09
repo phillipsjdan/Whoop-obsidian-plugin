@@ -12,7 +12,6 @@ import {
 } from "../fetch.ts";
 import { PaginatedResponse, Workout } from "../models.ts";
 import {
-  cycle,
   cyclingWorkout,
   liftingWorkout,
   recovery,
@@ -277,9 +276,8 @@ class PathClient implements ApiClient {
 describe("getDayContext", () => {
   const day = new Date(2026, 7, 9);
 
-  it("gathers the cycle, recovery and sleep for the day", async () => {
+  it("gathers the recovery and sleep for the day", async () => {
     const client = new PathClient({
-      "/cycle": page([cycle()]),
       "/recovery": page([recovery()]),
       "/activity/sleep": page([sleep()]),
     });
@@ -287,7 +285,6 @@ describe("getDayContext", () => {
     const context = await getDayContext(client, day);
 
     expect(context.date).toBe("2026-08-09");
-    expect(context.cycle?.score?.strain).toBe(14.2);
     expect(context.recovery?.score?.recovery_score).toBe(62);
     expect(context.sleep?.id).toBe("c1d2e3f4-0000-4a2b-9c3d-000000000010");
   });
@@ -297,10 +294,10 @@ describe("getDayContext", () => {
     await getDayContext(client, day);
 
     const sleepStart = client.paramsFor("/activity/sleep")?.start;
-    const cycleStart = client.paramsFor("/cycle")?.start;
+    const recoveryStart = client.paramsFor("/recovery")?.start;
 
     expect(sleepStart).toBe(addLocalDays(startOfLocalDay(day), -1).toISOString());
-    expect(cycleStart).toBe(startOfLocalDay(day).toISOString());
+    expect(recoveryStart).toBe(startOfLocalDay(day).toISOString());
   });
 
   it("picks the night's sleep over a nap taken later the same day", async () => {
@@ -321,28 +318,24 @@ describe("getDayContext", () => {
   it("survives a scope the token does not carry", async () => {
     // What every install looks like until it reconnects for the new scopes.
     const client = new PathClient({
-      "/cycle": new Error("403 Forbidden"),
       "/recovery": new Error("403 Forbidden"),
       "/activity/sleep": page([sleep()]),
     });
 
     const context = await getDayContext(client, day);
 
-    expect(context.cycle).toBeNull();
     expect(context.recovery).toBeNull();
     expect(context.sleep).not.toBeNull();
   });
 
   it("returns an empty context rather than throwing when everything fails", async () => {
     const client = new PathClient({
-      "/cycle": new Error("boom"),
       "/recovery": new Error("boom"),
       "/activity/sleep": new Error("boom"),
     });
 
     await expect(getDayContext(client, day)).resolves.toEqual({
       date: "2026-08-09",
-      cycle: null,
       recovery: null,
       sleep: null,
     });
