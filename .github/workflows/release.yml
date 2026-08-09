@@ -1,0 +1,134 @@
+name: Release
+
+# Every merge into main cuts a release. The version is bumped automatically —
+# patch by default, or minor/major when the merge commit says so — and the tag
+# is the bare version, which is how Obsidian and BRAT identify a plugin release.
+#
+#   [minor] / [major]   in the merge commit (or squashed PR title) to bump further
+#   [skip release]      to merge without releasing
+#
+# Or run this workflow by hand from the Actions tab and pick the bump there;
+# a manual choice overrides whatever the commit message says.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump to apply
+        required: true
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+
+permissions:
+  contents: write
+
+# Never let two releases interleave and race for the same version.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history and tags, so an existing tag can be detected.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - name: Decide the version bump
+        id: decide
+        env:
+          # Passed through the environment so no commit message can be read as
+          # an argument, however it is punctuated.
+          RELEASE_MESSAGE: ${{ github.event.head_commit.message }}
+          RELEASE_OVERRIDE: ${{ inputs.bump }}
+        run: |
+          bump=$(node scripts/version.mjs decide)
+          echo "bump=$bump" >> "$GITHUB_OUTPUT"
+          echo "Bump: $bump"
+
+      - name: Skip
+        if: steps.decide.outputs.bump == 'skip'
+        run: echo "Commit asked for no release. Nothing to do."
+
+      # Nothing below runs for a skipped release.
+
+      - name: Typecheck
+        if: steps.decide.outputs.bump != 'skip'
+        run: npm run lint
+
+      - name: Obsidian plugin lint
+        if: steps.decide.outputs.bump != 'skip'
+        run: npm run lint:obsidian
+
+      - name: Test
+        if: steps.decide.outputs.bump != 'skip'
+        run: npm test
+
+      - name: Bump the version
+        id: version
+        if: steps.decide.outputs.bump != 'skip'
+        env:
+          RELEASE_BUMP: ${{ steps.decide.outputs.bump }}
+        run: |
+          version=$(node scripts/version.mjs apply)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Releasing $version"
+
+      - name: Refuse to reuse an existing tag
+        if: steps.decide.outputs.bump != 'skip'
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          if git rev-parse -q --verify "refs/tags/$version" >/dev/null; then
+            echo "Tag $version already exists. Resolve the version by hand." >&2
+            exit 1
+          fi
+
+      - name: Build
+        if: steps.decide.outputs.bump != 'skip'
+        run: npm run build
+
+      - name: Check the release meets Obsidian's requirements
+        if: steps.decide.outputs.bump != 'skip'
+        run: node scripts/validate-release.mjs "${{ steps.version.outputs.version }}"
+
+      - name: Commit and tag
+        if: steps.decide.outputs.bump != 'skip'
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add manifest.json package.json versions.json
+          # [skip ci] belt and braces: a push made with GITHUB_TOKEN does not
+          # trigger workflows, so this cannot loop back into another release.
+          git commit -m "Release $version [skip ci]"
+          # The tag is the bare version. A "v" prefix makes Obsidian and BRAT
+          # ignore the release entirely.
+          git tag -a "$version" -m "$version"
+          git push origin HEAD:main
+          git push origin "refs/tags/$version"
+
+      - name: Publish the release
+        if: steps.decide.outputs.bump != 'skip'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          # Assets are attached individually, not zipped: Obsidian fetches each
+          # by name from the release.
+          gh release create "$version" \
+            --title "$version" \
+            --generate-notes \
+            main.js manifest.json styles.css

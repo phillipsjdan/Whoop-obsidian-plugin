@@ -212,6 +212,35 @@ Layout:
 
 CI runs the typecheck, both lint passes, the tests and a production build for every pull request into `main`/`master`. The Node version comes from `.nvmrc` (22) so CI and local development cannot drift; there is no version matrix, because the source uses no Node APIs beyond the global `crypto` and esbuild emits the same Electron-targeted bundle whichever Node runs it.
 
+## Releasing
+
+Merging into `main` cuts a release automatically. No tags to push, no version to edit by hand.
+
+**Choosing the version.** The patch number goes up by default. To bump further, put a marker anywhere in the merge commit — which for a squash merge means the pull request title is enough:
+
+| Marker | Effect on `1.4.2` |
+|---|---|
+| *(none)* | `1.4.3` |
+| `[minor]` | `1.5.0` |
+| `[major]` | `2.0.0` |
+| `[skip release]` | Merges without releasing |
+
+`[major]` beats `[minor]`, and `[skip release]` beats both. You can also run the **Release** workflow by hand from the Actions tab and pick the bump from a dropdown; a manual choice overrides whatever the commit says.
+
+**What the workflow does.** Typecheck, both lints and the tests run *before* anything is written. Then `scripts/version.mjs` moves `manifest.json`, `package.json` and `versions.json` to the new version together, the plugin is built, and `scripts/validate-release.mjs` checks the result against what Obsidian requires — refusing to publish otherwise:
+
+- The tag is the bare version, `1.4.3`, never `v1.4.3`. A `v` prefix makes Obsidian and BRAT ignore the release.
+- `manifest.json`'s version matches the tag exactly.
+- `versions.json` has an entry for the new version pointing at the manifest's `minAppVersion`, so older Obsidian installs are offered the last release they can run.
+- `main.js`, `manifest.json` and `styles.css` are attached as individual assets — not a zip, which Obsidian cannot read.
+- The manifest carries every required field, with the right type, and an `id` that is usable as a folder name.
+
+Only then does it commit the version bump, tag it, and publish the release with generated notes.
+
+To raise the minimum Obsidian version, edit `minAppVersion` in `manifest.json` in the usual way; the next release records it against the new version automatically.
+
+**Two things to be aware of.** The workflow pushes the version-bump commit to `main`, so a branch protection rule requiring reviews or status checks on `main` will block it unless GitHub Actions is exempted. And the release is only as good as the checks above — nothing here has been verified against the live WHOOP API, so a green release is not evidence the plugin talks to WHOOP correctly.
+
 ---
 
 ## Differences from the reference plugin
