@@ -20,6 +20,13 @@ export interface WhoopWorkoutSettings {
   includeRates: boolean;
   /** Day recovery/sleep sentence above the first workout in a note. */
   includeDaySummary: boolean;
+  /** Express the heart-rate rows as a percentage of your max. */
+  includePercentOfMax: boolean;
+
+  /** Cached from /user/measurement/body — it changes rarely enough to store. */
+  maxHeartRate: number | null;
+  /** When that cache was filled, as a Unix timestamp in ms. */
+  maxHeartRateFetchedAt: number;
 
   defaultHeading: string;
   insertPosition: InsertPosition;
@@ -43,6 +50,10 @@ export const DEFAULT_SETTINGS: WhoopWorkoutSettings = {
   includeDataCompleteness: true,
   includeRates: true,
   includeDaySummary: true,
+  includePercentOfMax: true,
+
+  maxHeartRate: null,
+  maxHeartRateFetchedAt: 0,
 
   defaultHeading: "## WHOOP",
   insertPosition: "bottom",
@@ -61,6 +72,7 @@ export function templateOptions(settings: WhoopWorkoutSettings): TemplateOptions
     includeZoneDurations: settings.includeZoneDurations,
     includeDataCompleteness: settings.includeDataCompleteness,
     includeRates: settings.includeRates,
+    maxHeartRate: settings.includePercentOfMax ? settings.maxHeartRate : null,
   };
 }
 
@@ -95,7 +107,7 @@ export class WhoopWorkoutSettingTab extends PluginSettingTab {
 
     containerEl.createEl("p", {
       cls: "setting-item-description",
-      text: `Create an app at developer.whoop.com with the redirect URI ${REDIRECT_URI} and the scopes "offline", "read:workout", "read:recovery" and "read:sleep", then paste its credentials below.`,
+      text: `Create an app at developer.whoop.com with the redirect URI ${REDIRECT_URI} and the scopes "offline", "read:workout", "read:recovery", "read:sleep" and "read:body_measurement", then paste its credentials below.`,
     });
 
     new Setting(containerEl)
@@ -231,6 +243,21 @@ export class WhoopWorkoutSettingTab extends PluginSettingTab {
         toggle.setValue(settings.includeRates).onChange(async (value) => {
           settings.includeRates = value;
           await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Heart rate as a percentage of max")
+      .setDesc(
+        settings.maxHeartRate
+          ? `Show the heart-rate rows against your max of ${settings.maxHeartRate} bpm, read from WHOOP and refreshed monthly.`
+          : "Show the heart-rate rows as a percentage of your max, read from WHOOP the next time you insert a workout."
+      )
+      .addToggle((toggle) =>
+        toggle.setValue(settings.includePercentOfMax).onChange(async (value) => {
+          settings.includePercentOfMax = value;
+          await this.plugin.saveSettings();
+          this.display();
         })
       );
 

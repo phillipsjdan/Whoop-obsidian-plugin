@@ -556,3 +556,119 @@ describe("renderWorkoutNote with a day context", () => {
     );
   });
 });
+
+describe("heart rate as a percentage of max", () => {
+  it("expresses both heart rate rows against the max", () => {
+    const table = rows(
+      renderWorkoutSnippet(runningWorkout(), options({ maxHeartRate: 185 }))
+    );
+
+    expect(table["Avg HR"]).toBe("148 bpm (80% of max)");
+    expect(table["Max HR"]).toBe("167 bpm (90% of max)");
+  });
+
+  it("leaves the rows bare when the max is unknown", () => {
+    const table = rows(renderWorkoutSnippet(runningWorkout(), options()));
+
+    expect(table["Avg HR"]).toBe("148 bpm");
+    expect(table["Max HR"]).toBe("167 bpm");
+  });
+
+  it("drops the percentage rather than reporting over 100%", () => {
+    // A reading above the recorded max means the max is stale, not that the
+    // workout was run at 104%.
+    const table = rows(
+      renderWorkoutSnippet(runningWorkout(), options({ maxHeartRate: 160 }))
+    );
+
+    expect(table["Avg HR"]).toBe("148 bpm (93% of max)");
+    expect(table["Max HR"]).toBe("167 bpm");
+  });
+});
+
+describe("sport name casing", () => {
+  it("prefers the table's casing over v2's lower-case name", () => {
+    expect(sportName({ sport_id: 0, sport_name: "running" })).toBe("Running");
+    expect(sportName({ sport_id: 98, sport_name: "hiit" })).toBe("HIIT");
+  });
+
+  it("title-cases a lower-case name for a sport it does not know", () => {
+    expect(sportName({ sport_id: 9999, sport_name: "moon walking" })).toBe(
+      "Moon Walking"
+    );
+  });
+
+  it("leaves a name that carries its own capitalisation alone", () => {
+    expect(sportName({ sport_id: 9999, sport_name: "eFoiling" })).toBe("eFoiling");
+    expect(sportName({ sport_id: 0, sport_name: "Trail Run" })).toBe("Trail Run");
+  });
+});
+
+describe("renderWorkoutNote frontmatter", () => {
+  /** Parses the YAML frontmatter into a flat key/value map. */
+  function frontmatter(note: string): Record<string, string> {
+    const lines = note.split("\n");
+    const end = lines.indexOf("---", 1);
+    const out: Record<string, string> = {};
+    for (const line of lines.slice(1, end)) {
+      const m = line.match(/^([a-z0-9_]+): (.+)$/);
+      if (m) out[m[1]] = m[2];
+    }
+    return out;
+  }
+
+  it("writes pace as a number so it can be sorted and averaged", () => {
+    const front = frontmatter(renderWorkoutNote(runningWorkout()));
+
+    // 42 min over 8.02 km.
+    expect(front.pace_seconds_per_km).toBe("314");
+    expect(front.avg_speed_kmh).toBeUndefined();
+  });
+
+  it("writes speed instead of pace for a wheeled sport", () => {
+    const front = frontmatter(renderWorkoutNote(cyclingWorkout()));
+
+    expect(front.avg_speed_kmh).toBe("26.7");
+    expect(front.pace_seconds_per_km).toBeUndefined();
+  });
+
+  it("follows the distance unit into the field names", () => {
+    const front = frontmatter(
+      renderWorkoutNote(runningWorkout(), options({ distanceUnit: "miles" }))
+    );
+
+    expect(front.distance_miles).toBe("4.98");
+    expect(front.pace_seconds_per_mile).toBe("506");
+    expect(front.pace_seconds_per_km).toBeUndefined();
+  });
+
+  it("makes the zone breakdown queryable", () => {
+    const front = frontmatter(renderWorkoutNote(runningWorkout()));
+
+    expect(front.zone_2_minutes).toBe("15");
+    expect(front.zone_3_minutes).toBe("19");
+    expect(front.zone_4_minutes).toBe("5");
+    expect(front.zone_5_minutes).toBe("3");
+    expect(front.zone_1_minutes).toBeUndefined();
+  });
+
+  it("carries data completeness and elevation", () => {
+    const front = frontmatter(
+      renderWorkoutNote(
+        runningWorkout({ score: workoutScore({ altitude_gain_meter: 148 }) })
+      )
+    );
+
+    expect(front.percent_recorded).toBe("98");
+    expect(front.elevation_gain_m).toBe("148");
+  });
+
+  it("omits every field the workout has no value for", () => {
+    const front = frontmatter(renderWorkoutNote(pendingWorkout()));
+
+    expect(front.whoop_workout_id).toBeDefined();
+    expect(front.pace_seconds_per_km).toBeUndefined();
+    expect(front.percent_recorded).toBeUndefined();
+    expect(front.zone_3_minutes).toBeUndefined();
+  });
+});

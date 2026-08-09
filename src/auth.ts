@@ -5,7 +5,9 @@ const AUTH_URL = "https://api.prod.whoop.com/oauth/oauth2/auth";
 
 /**
  * Read-only scopes. Workouts are the point of the plugin; recovery and sleep
- * back the day-context sentence written above the first workout in a note.
+ * back the day-context sentence written above the first workout in a note, and
+ * body measurement supplies only the max heart rate that heart-rate rows are
+ * expressed as a percentage of.
  *
  * Note the spelling WHOOP defines for each one — asking for a scope it does not
  * recognise gets the whole authorization rejected as malformed.
@@ -14,7 +16,8 @@ const AUTH_URL = "https://api.prod.whoop.com/oauth/oauth2/auth";
  * at consent time, so anyone upgrading has to reconnect once. Removing one does
  * not — a token simply carries more than is asked for.
  */
-export const SCOPES = "offline read:workout read:recovery read:sleep";
+export const SCOPES =
+  "offline read:workout read:recovery read:sleep read:body_measurement";
 
 /** obsidian://<this> — must match the redirect URI registered with WHOOP. */
 export const CALLBACK_ACTION = "whoop-workout-callback";

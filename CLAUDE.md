@@ -32,10 +32,11 @@ defensively: a renamed or missing field must degrade to a dropped clause or a
 skipped row, never a crash. `renderDaySummary` is the model for this.
 
 **Scope spellings are not uniform.** It is `read:cycles` (plural) but
-`read:recovery`, `read:sleep`, `read:workout` (singular). Asking for a scope
-WHOOP does not define gets the whole authorization rejected as malformed — and
-that rejection comes back with no `state` parameter, which surfaces as a
-confusing state error rather than a scope error.
+`read:recovery`, `read:sleep`, `read:workout`, `read:body_measurement`
+(singular). Asking for a scope WHOOP does not define gets the whole
+authorization rejected as malformed — and that rejection comes back with no
+`state` parameter, which surfaces as a confusing state error rather than a scope
+error.
 
 **Adding a scope forces every existing user to reconnect** (WHOOP grants scopes
 at consent time). Removing one does not — a token simply carries more than is

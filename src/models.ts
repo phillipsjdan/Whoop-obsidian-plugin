@@ -174,6 +174,16 @@ export interface Sleep {
 }
 
 /**
+ * Height, weight and max heart rate. Only the max heart rate is used — it is the
+ * denominator that turns a bare bpm figure into an intensity.
+ */
+export interface BodyMeasurement {
+  height_meter?: number;
+  weight_kilogram?: number;
+  max_heart_rate?: number;
+}
+
+/**
  * The day a workout happened in, as far as WHOOP knows. Either part may be
  * absent.
  *
@@ -232,11 +242,27 @@ export function sleepNeededMs(sleep: Sleep): number | null {
   return sawBaseline && total > 0 ? total : null;
 }
 
-/** Human-readable name for a WHOOP sport_id. */
+/**
+ * Human-readable name for a WHOOP sport_id.
+ *
+ * v2 populates `sport_name` in lower case ("running"), which would otherwise put
+ * a lower-case heading on every note. The lookup table holds the presentable
+ * form, including the ones blind title-casing would mangle — "HIIT", not "Hiit".
+ * A name that is not simply the table's entry in another case is left alone, so
+ * anything WHOOP starts sending with its own capitalisation survives.
+ */
 export function sportName(workout: Pick<Workout, "sport_id" | "sport_name">): string {
   const explicit = workout.sport_name?.trim();
-  if (explicit) return explicit;
-  return SPORT_NAMES[workout.sport_id] ?? `Sport ${workout.sport_id}`;
+  const known = SPORT_NAMES[workout.sport_id];
+
+  if (!explicit) return known ?? `Sport ${workout.sport_id}`;
+  if (known && explicit.toLowerCase() === known.toLowerCase()) return known;
+  return explicit === explicit.toLowerCase() ? titleCase(explicit) : explicit;
+}
+
+/** Capitalises each word, leaving separators like "/" and "-" in place. */
+function titleCase(text: string): string {
+  return text.replace(/[\p{L}\p{N}]+/gu, (word) => word[0].toUpperCase() + word.slice(1));
 }
 
 export const SPORT_NAMES: Record<number, string> = {

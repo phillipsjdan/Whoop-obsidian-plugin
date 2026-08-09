@@ -18,7 +18,7 @@ import {
   validateState,
 } from "./auth.ts";
 import { WhoopClient } from "./client.ts";
-import { getDayContext, getWorkoutsForDay } from "./fetch.ts";
+import { getBodyMeasurement, getDayContext, getWorkoutsForDay } from "./fetch.ts";
 import { DayContext, Workout, sportName } from "./models.ts";
 import {
   DEFAULT_SETTINGS,
@@ -179,8 +179,8 @@ export default class WhoopWorkoutPlugin extends Plugin {
       throw new Error(
         `WHOOP declined the authorization request: ${describeError(params)}. ` +
           "If it mentions scopes, your developer app is missing one the plugin asks " +
-          "for — add read:workout, read:recovery and read:sleep to it " +
-          "at developer.whoop.com, save, then try again."
+          "for — add read:workout, read:recovery, read:sleep and " +
+          "read:body_measurement to it at developer.whoop.com, save, then try again."
       );
     }
 
@@ -268,9 +268,26 @@ export default class WhoopWorkoutPlugin extends Plugin {
   }
 
   /**
-   * Fetches the day's recovery, sleep and strain, or null when the setting is
-   * off or nothing came back. Never throws: the day context is decoration on top
-   * of the workout, so a missing scope must not sink the command.
+   * Everything rendering needs beyond the workout itself.
+   *
+   * `content` is what the block is destined for: a note that already holds a
+   * WHOOP block will not use a day context, so there is no reason to spend two
+   * requests fetching one. `blockFor` re-checks at write time regardless, so
+   * this is purely an optimization and never the thing deciding the output.
+   */
+  private async prepareRender(
+    workout: Workout,
+    content: string
+  ): Promise<DayContext | null> {
+    await this.ensureMaxHeartRate();
+    if (!shouldIncludeDaySummary(content)) return null;
+    return this.dayContextFor(workout);
+  }
+
+  /**
+   * Fetches the day's recovery and sleep, or null when the setting is off or
+   * nothing came back. Never throws: the day context is decoration on top of the
+   * workout, so a missing scope must not sink the command.
    */
   private async dayContextFor(workout: Workout): Promise<DayContext | null> {
     if (!this.settings.includeDaySummary) return null;
@@ -280,6 +297,35 @@ export default class WhoopWorkoutPlugin extends Plugin {
     } catch (e) {
       console.warn("[WHOOP workout insert] could not load the day context", e);
       return null;
+    }
+  }
+
+  /**
+   * Refreshes the cached max heart rate when it is missing or stale.
+   *
+   * A max heart rate moves over years, not workouts, so it is stored in settings
+   * and re-read monthly rather than fetched per insert. A failed refresh keeps
+   * the cached value: a stale max beats no percentages at all.
+   */
+  private async ensureMaxHeartRate(): Promise<void> {
+    if (!this.settings.includePercentOfMax) return;
+
+    const age = Date.now() - (this.settings.maxHeartRateFetchedAt || 0);
+    if (this.settings.maxHeartRate && age < MAX_HEART_RATE_TTL_MS) return;
+
+    try {
+      const client = await this.getClient();
+      const body = await getBodyMeasurement(client);
+      const max = body?.max_heart_rate;
+      if (typeof max === "number" && Number.isFinite(max) && max > 0) {
+        this.settings.maxHeartRate = Math.round(max);
+        this.settings.maxHeartRateFetchedAt = Date.now();
+        await this.saveSettings();
+      }
+    } catch (e) {
+      // Usually a token predating read:body_measurement. The percentage is
+      // cosmetic, so this is logged and the insert carries on without it.
+      console.warn("[WHOOP workout insert] could not read the max heart rate", e);
     }
   }
 
@@ -313,7 +359,7 @@ export default class WhoopWorkoutPlugin extends Plugin {
 
     if (!(await this.confirmNotDuplicate(editor.getValue(), workout))) return;
 
-    const context = await this.dayContextFor(workout);
+    const context = await this.prepareRender(workout, editor.getValue());
 
     // Re-read the buffer: the fetch above gave the user time to keep typing.
     const block = this.blockFor(workout, editor.getValue(), context);
@@ -373,7 +419,7 @@ export default class WhoopWorkoutPlugin extends Plugin {
     const current = await this.app.vault.read(file);
     if (!(await this.confirmNotDuplicate(current, workout))) return;
 
-    const context = await this.dayContextFor(workout);
+    const context = await this.prepareRender(workout, current);
 
     const preview = insertUnderHeading(
       current,
@@ -440,7 +486,7 @@ export default class WhoopWorkoutPlugin extends Plugin {
     );
     if (!workout) return;
 
-    const context = await this.dayContextFor(workout);
+    const context = await this.prepareRender(workout, "");
     const content = renderWorkoutNote(
       workout,
       templateOptions(this.settings),
@@ -508,6 +554,9 @@ export default class WhoopWorkoutPlugin extends Plugin {
     }
   }
 }
+
+/** How long a cached max heart rate stays good for. */
+const MAX_HEART_RATE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 /** What the heading-insert command actually did to the file. */
 type WriteOutcome = "inserted" | "appended" | "vanished";

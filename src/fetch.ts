@@ -1,5 +1,6 @@
 import { ApiClient, NotFoundError } from "./client.ts";
 import {
+  BodyMeasurement,
   DayContext,
   PaginatedResponse,
   Recovery,
@@ -82,6 +83,22 @@ export async function getWorkoutsForDay(
     .sort((a, b) => new Date(b.start).getTime() - new Date(a.start).getTime());
 }
 
+/**
+ * The user's body measurements. Not paginated and not date-ranged — this is a
+ * single current record, which is why it is cached rather than fetched per
+ * workout.
+ */
+export async function getBodyMeasurement(
+  client: ApiClient
+): Promise<BodyMeasurement | null> {
+  try {
+    return (await client.get("/user/measurement/body")) as BodyMeasurement;
+  } catch (e) {
+    if (e instanceof NotFoundError) return null;
+    throw e;
+  }
+}
+
 export function getRecoveries(
   client: ApiClient,
   start: Date,
@@ -115,10 +132,11 @@ export async function getDayContext(
     optional(() => getSleeps(client, sleepStart, end), "sleep"),
   ]);
 
+  const sleep = pickSleep(sleeps, start, end);
   return {
     date: formatLocalDate(date),
-    recovery: recoveries[0] ?? null,
-    sleep: pickSleep(sleeps, start, end),
+    recovery: pickRecovery(recoveries, sleep),
+    sleep,
   };
 }
 
@@ -132,6 +150,22 @@ async function optional<T>(run: () => Promise<T[]>, label: string): Promise<T[]>
     console.warn(`[WHOOP workout insert] could not load ${label} for the day`, e);
     return [];
   }
+}
+
+/**
+ * The recovery belonging to a given night.
+ *
+ * v2 keys a recovery to the sleep it followed, so this is an identity match
+ * rather than "whichever record the day range happened to return first". A night
+ * WHOOP has not scored a recovery for yields null, which is the honest answer —
+ * the previous positional pick would have attached a neighbouring day's numbers.
+ */
+export function pickRecovery(
+  recoveries: Recovery[],
+  sleep: Sleep | null
+): Recovery | null {
+  if (!sleep) return recoveries[0] ?? null;
+  return recoveries.find((r) => r.sleep_id && r.sleep_id === sleep.id) ?? null;
 }
 
 /**
