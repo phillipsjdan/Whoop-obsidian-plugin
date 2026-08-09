@@ -210,7 +210,7 @@ Layout:
 
 `src/insert.ts` is the riskiest code here and is tested accordingly: heading missing, heading at end of file, heading immediately followed by another heading, empty file, nested subsections, setext headings (as both target and section boundary), code fences, frontmatter, CRLF, and blank-line normalization.
 
-CI runs the typecheck, both lint passes, the tests and a production build on Node 20 and 22 for every pull request into `main`/`master`.
+CI runs the typecheck, both lint passes, the tests and a production build for every pull request into `main`/`master`. The Node version comes from `.nvmrc` (22) so CI and local development cannot drift; there is no version matrix, because the source uses no Node APIs beyond the global `crypto` and esbuild emits the same Electron-targeted bundle whichever Node runs it.
 
 ---
 

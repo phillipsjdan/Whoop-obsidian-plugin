@@ -19,6 +19,9 @@
     "running"
   ],
   "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@typescript-eslint/parser": "^8.58.0",
