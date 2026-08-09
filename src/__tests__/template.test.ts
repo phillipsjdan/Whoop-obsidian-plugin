@@ -447,7 +447,7 @@ describe("normalizeNotePath", () => {
 });
 
 describe("renderDaySummary", () => {
-  it("states recovery, sleep and day strain as prose, not table rows", () => {
+  it("states recovery and sleep as prose, not table rows", () => {
     const summary = renderDaySummary(dayContext());
 
     expect(summary).toBe(
@@ -455,11 +455,17 @@ describe("renderDaySummary", () => {
         "Recovery that morning was 62%, with a resting heart rate of 48 bpm, " +
           "HRV of 78 ms and blood oxygen at 96%. The night before brought " +
           "7 h 12 min of sleep against a need of 8 h 22 min — 86% sleep " +
-          "performance, 93% efficiency and 9 disturbances. Day strain reached 14.2.",
+          "performance, 93% efficiency and 9 disturbances.",
         "<!-- whoop-day: 2026-08-09 -->",
       ].join("\n")
     );
     expect(summary).not.toContain("|");
+  });
+
+  it("never quotes day strain, which is a running total rather than a figure", () => {
+    // The cycle endpoint reports strain accumulated so far, so on a workout
+    // filed the same day it would be stale the moment it was written.
+    expect(renderDaySummary(dayContext())).not.toMatch(/strain/i);
   });
 
   it("counts sleep as time in bed less time awake", () => {
@@ -468,7 +474,7 @@ describe("renderDaySummary", () => {
   });
 
   it("drops the clauses it has no numbers for", () => {
-    const summary = renderDaySummary(dayContext({ sleep: null, cycle: null }));
+    const summary = renderDaySummary(dayContext({ sleep: null }));
 
     expect(summary).toContain("Recovery that morning was 62%");
     expect(summary).not.toContain("night before");
@@ -479,7 +485,6 @@ describe("renderDaySummary", () => {
     const summary = renderDaySummary(
       dayContext({
         sleep: null,
-        cycle: null,
         recovery: recovery({ score: { recovery_score: 55, user_calibrating: true } }),
       })
     );
@@ -491,7 +496,6 @@ describe("renderDaySummary", () => {
     const summary = renderDaySummary(
       dayContext({
         recovery: null,
-        cycle: null,
         sleep: sleep({ score: { sleep_performance_percentage: 88 } }),
       })
     );
@@ -500,7 +504,7 @@ describe("renderDaySummary", () => {
   });
 
   it("renders nothing at all when the day has no scores", () => {
-    const empty = { date: "2026-08-09", cycle: null, recovery: null, sleep: null };
+    const empty = { date: "2026-08-09", recovery: null, sleep: null };
     expect(renderDaySummary(empty)).toBe("");
   });
 });
@@ -550,5 +554,121 @@ describe("renderWorkoutNote with a day context", () => {
     expect(renderWorkoutNote(runningWorkout(), DEFAULT_TEMPLATE_OPTIONS, null)).toBe(
       renderWorkoutNote(runningWorkout())
     );
+  });
+});
+
+describe("heart rate as a percentage of max", () => {
+  it("expresses both heart rate rows against the max", () => {
+    const table = rows(
+      renderWorkoutSnippet(runningWorkout(), options({ maxHeartRate: 185 }))
+    );
+
+    expect(table["Avg HR"]).toBe("148 bpm (80% of max)");
+    expect(table["Max HR"]).toBe("167 bpm (90% of max)");
+  });
+
+  it("leaves the rows bare when the max is unknown", () => {
+    const table = rows(renderWorkoutSnippet(runningWorkout(), options()));
+
+    expect(table["Avg HR"]).toBe("148 bpm");
+    expect(table["Max HR"]).toBe("167 bpm");
+  });
+
+  it("drops the percentage rather than reporting over 100%", () => {
+    // A reading above the recorded max means the max is stale, not that the
+    // workout was run at 104%.
+    const table = rows(
+      renderWorkoutSnippet(runningWorkout(), options({ maxHeartRate: 160 }))
+    );
+
+    expect(table["Avg HR"]).toBe("148 bpm (93% of max)");
+    expect(table["Max HR"]).toBe("167 bpm");
+  });
+});
+
+describe("sport name casing", () => {
+  it("prefers the table's casing over v2's lower-case name", () => {
+    expect(sportName({ sport_id: 0, sport_name: "running" })).toBe("Running");
+    expect(sportName({ sport_id: 98, sport_name: "hiit" })).toBe("HIIT");
+  });
+
+  it("title-cases a lower-case name for a sport it does not know", () => {
+    expect(sportName({ sport_id: 9999, sport_name: "moon walking" })).toBe(
+      "Moon Walking"
+    );
+  });
+
+  it("leaves a name that carries its own capitalisation alone", () => {
+    expect(sportName({ sport_id: 9999, sport_name: "eFoiling" })).toBe("eFoiling");
+    expect(sportName({ sport_id: 0, sport_name: "Trail Run" })).toBe("Trail Run");
+  });
+});
+
+describe("renderWorkoutNote frontmatter", () => {
+  /** Parses the YAML frontmatter into a flat key/value map. */
+  function frontmatter(note: string): Record<string, string> {
+    const lines = note.split("\n");
+    const end = lines.indexOf("---", 1);
+    const out: Record<string, string> = {};
+    for (const line of lines.slice(1, end)) {
+      const m = line.match(/^([a-z0-9_]+): (.+)$/);
+      if (m) out[m[1]] = m[2];
+    }
+    return out;
+  }
+
+  it("writes pace as a number so it can be sorted and averaged", () => {
+    const front = frontmatter(renderWorkoutNote(runningWorkout()));
+
+    // 42 min over 8.02 km.
+    expect(front.pace_seconds_per_km).toBe("314");
+    expect(front.avg_speed_kmh).toBeUndefined();
+  });
+
+  it("writes speed instead of pace for a wheeled sport", () => {
+    const front = frontmatter(renderWorkoutNote(cyclingWorkout()));
+
+    expect(front.avg_speed_kmh).toBe("26.7");
+    expect(front.pace_seconds_per_km).toBeUndefined();
+  });
+
+  it("follows the distance unit into the field names", () => {
+    const front = frontmatter(
+      renderWorkoutNote(runningWorkout(), options({ distanceUnit: "miles" }))
+    );
+
+    expect(front.distance_miles).toBe("4.98");
+    expect(front.pace_seconds_per_mile).toBe("506");
+    expect(front.pace_seconds_per_km).toBeUndefined();
+  });
+
+  it("makes the zone breakdown queryable", () => {
+    const front = frontmatter(renderWorkoutNote(runningWorkout()));
+
+    expect(front.zone_2_minutes).toBe("15");
+    expect(front.zone_3_minutes).toBe("19");
+    expect(front.zone_4_minutes).toBe("5");
+    expect(front.zone_5_minutes).toBe("3");
+    expect(front.zone_1_minutes).toBeUndefined();
+  });
+
+  it("carries data completeness and elevation", () => {
+    const front = frontmatter(
+      renderWorkoutNote(
+        runningWorkout({ score: workoutScore({ altitude_gain_meter: 148 }) })
+      )
+    );
+
+    expect(front.percent_recorded).toBe("98");
+    expect(front.elevation_gain_m).toBe("148");
+  });
+
+  it("omits every field the workout has no value for", () => {
+    const front = frontmatter(renderWorkoutNote(pendingWorkout()));
+
+    expect(front.whoop_workout_id).toBeDefined();
+    expect(front.pace_seconds_per_km).toBeUndefined();
+    expect(front.percent_recorded).toBeUndefined();
+    expect(front.zone_3_minutes).toBeUndefined();
   });
 });

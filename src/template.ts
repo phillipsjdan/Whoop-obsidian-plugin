@@ -23,6 +23,8 @@ import {
   formatSpeed,
   convertDistance,
   kilojoulesToKcal,
+  paceSecondsPerUnit,
+  speedPerHour,
   unitLabel,
   workoutDateStamp,
 } from "./format.ts";
@@ -38,6 +40,11 @@ export interface TemplateOptions {
   includeDataCompleteness: boolean;
   /** Per-hour derived figures: calorie burn rate and strain rate. */
   includeRates: boolean;
+  /**
+   * The user's max heart rate, for expressing the HR rows as a percentage.
+   * Null when unknown or the setting is off, which drops the percentage only.
+   */
+  maxHeartRate: number | null;
 }
 
 export const DEFAULT_TEMPLATE_OPTIONS: TemplateOptions = {
@@ -48,6 +55,7 @@ export const DEFAULT_TEMPLATE_OPTIONS: TemplateOptions = {
   includeZoneDurations: true,
   includeDataCompleteness: true,
   includeRates: true,
+  maxHeartRate: null,
 };
 
 /** Sports where average speed reads better than pace. */
@@ -116,21 +124,22 @@ export function shouldIncludeDaySummary(content: string): boolean {
 }
 
 /**
- * The day's recovery, sleep and strain as prose.
+ * The day's recovery and sleep as prose.
  *
  * Deliberately sentences rather than table rows: none of this describes the
  * workout it sits above, and folding it into that table would imply it did.
  * Every clause is dropped when its number is missing, so a partially scored day
  * still reads as English.
+ *
+ * Both figures are settled by the time any workout exists to write them against
+ * — WHOOP scores them once in the morning and they do not move.
  */
 export function renderDaySummary(context: DayContext): string {
   if (!hasDayContext(context)) return "";
 
-  const sentences = [
-    recoverySentence(context),
-    sleepSentence(context),
-    strainSentence(context),
-  ].filter((s): s is string => s !== null);
+  const sentences = [recoverySentence(context), sleepSentence(context)].filter(
+    (s): s is string => s !== null
+  );
 
   if (sentences.length === 0) return "";
   return `${sentences.join(" ")}\n${dayMarker(context.date)}`;
@@ -197,12 +206,6 @@ function sleepSentence(context: DayContext): string | null {
   }
 
   return tail.length > 0 ? `${opening} — ${joinClauses(tail)}.` : `${opening}.`;
-}
-
-function strainSentence(context: DayContext): string | null {
-  const strain = context.cycle?.score?.strain;
-  if (!isPositive(strain)) return null;
-  return `Day strain reached ${strain.toFixed(1)}.`;
 }
 
 /** "a, b and c" — an Oxford-comma-free list for prose. */
@@ -292,10 +295,10 @@ function buildRows(
   }
 
   if (score.average_heart_rate > 0) {
-    rows.push(["Avg HR", `${Math.round(score.average_heart_rate)} bpm`]);
+    rows.push(["Avg HR", formatHeartRate(score.average_heart_rate, options.maxHeartRate)]);
   }
   if (score.max_heart_rate > 0) {
-    rows.push(["Max HR", `${Math.round(score.max_heart_rate)} bpm`]);
+    rows.push(["Max HR", formatHeartRate(score.max_heart_rate, options.maxHeartRate)]);
   }
   if (score.kilojoule > 0) {
     rows.push(["Calories", `${Math.round(kilojoulesToKcal(score.kilojoule))} kcal`]);
@@ -354,6 +357,19 @@ function buildRows(
   return rows;
 }
 
+/**
+ * "159 bpm (80% of max)". The percentage is dropped when the max is unknown, and
+ * when the reading exceeds it — a bpm above your recorded max means the max is
+ * stale, not that you trained at 104%.
+ */
+export function formatHeartRate(bpm: number, maxHeartRate: number | null): string {
+  const rounded = Math.round(bpm);
+  if (!maxHeartRate || maxHeartRate <= 0 || rounded > maxHeartRate) {
+    return `${rounded} bpm`;
+  }
+  return `${rounded} bpm (${Math.round((rounded / maxHeartRate) * 100)}% of max)`;
+}
+
 /** "12 min (34%)" — the share is omitted when there is no total to divide by. */
 function withShare(text: string, ms: number, totalMs: number): string {
   if (!Number.isFinite(totalMs) || totalMs <= 0) return text;
@@ -403,11 +419,29 @@ export function renderWorkoutNote(
     if (Number.isFinite(score.strain)) {
       front.push(["strain", score.strain.toFixed(1)]);
     }
-    if ((score.distance_meter ?? 0) > 0) {
+    const distance = score.distance_meter ?? 0;
+    if (distance > 0) {
       front.push([
         `distance_${unit === "miles" ? "miles" : "km"}`,
         convertDistance(score.distance_meter, unit).toFixed(2),
       ]);
+
+      // Numeric rather than the table's "5:14 /km", so it sorts and averages in
+      // a Dataview or Bases query instead of only reading well.
+      if (SPEED_SPORT_IDS.has(workout.sport_id)) {
+        const speed = speedPerHour(elapsed, distance, unit);
+        if (speed !== null) {
+          front.push([`avg_speed_${unit === "miles" ? "mph" : "kmh"}`, speed.toFixed(1)]);
+        }
+      } else {
+        const seconds = paceSecondsPerUnit(elapsed, distance, unit);
+        if (seconds !== null) {
+          front.push([
+            `pace_seconds_per_${unit === "miles" ? "mile" : "km"}`,
+            String(seconds),
+          ]);
+        }
+      }
     }
     if (score.average_heart_rate > 0) {
       front.push(["average_heart_rate", String(Math.round(score.average_heart_rate))]);
@@ -417,6 +451,33 @@ export function renderWorkoutNote(
     }
     if (score.kilojoule > 0) {
       front.push(["kilocalories", String(Math.round(kilojoulesToKcal(score.kilojoule)))]);
+    }
+    if (score.altitude_gain_meter > 0) {
+      front.push([
+        `elevation_gain_${unit === "miles" ? "feet" : "m"}`,
+        String(
+          unit === "miles"
+            ? Math.round(score.altitude_gain_meter / METERS_PER_FOOT)
+            : Math.round(score.altitude_gain_meter)
+        ),
+      ]);
+    }
+
+    const zones = zoneDurations(score);
+    if (zones) {
+      for (const [key, label] of ZONE_LABELS) {
+        const ms = zones[key];
+        if (Number.isFinite(ms) && ms > 0) {
+          // "Zone 3 time" -> zone_3_minutes
+          const field = label.toLowerCase().replace(" time", "").replace(" ", "_");
+          front.push([`${field}_minutes`, String(Math.round(ms / 60_000))]);
+        }
+      }
+    }
+
+    const recorded = percentRecorded(score);
+    if (recorded !== null) {
+      front.push(["percent_recorded", String(Math.round(recorded))]);
     }
   }
 

@@ -58,16 +58,25 @@ export function formatPace(
   meters: number,
   unit: DistanceUnit
 ): string | null {
-  if (!Number.isFinite(ms) || ms <= 0) return null;
-  if (!Number.isFinite(meters) || meters <= 0) return null;
-
-  const units = convertDistance(meters, unit);
-  const secondsPerUnit = Math.round(ms / 1000 / units);
-  if (!Number.isFinite(secondsPerUnit)) return null;
+  const secondsPerUnit = paceSecondsPerUnit(ms, meters, unit);
+  if (secondsPerUnit === null) return null;
 
   const minutes = Math.floor(secondsPerUnit / 60);
   const seconds = secondsPerUnit % 60;
   return `${minutes}:${String(seconds).padStart(2, "0")} /${unitLabel(unit)}`;
+}
+
+/** Pace as whole seconds per distance unit — the queryable form of the above. */
+export function paceSecondsPerUnit(
+  ms: number,
+  meters: number,
+  unit: DistanceUnit
+): number | null {
+  if (!Number.isFinite(ms) || ms <= 0) return null;
+  if (!Number.isFinite(meters) || meters <= 0) return null;
+
+  const secondsPerUnit = Math.round(ms / 1000 / convertDistance(meters, unit));
+  return Number.isFinite(secondsPerUnit) ? secondsPerUnit : null;
 }
 
 /** Average speed, e.g. "24.6 km/h" — more natural than pace for cycling. */
@@ -76,10 +85,20 @@ export function formatSpeed(
   meters: number,
   unit: DistanceUnit
 ): string | null {
+  const perHour = speedPerHour(ms, meters, unit);
+  if (perHour === null) return null;
+  return `${perHour.toFixed(1)} ${unitLabel(unit)}/h`;
+}
+
+/** Average speed in units per hour — the queryable form of the above. */
+export function speedPerHour(
+  ms: number,
+  meters: number,
+  unit: DistanceUnit
+): number | null {
   if (!Number.isFinite(ms) || ms <= 0) return null;
   if (!Number.isFinite(meters) || meters <= 0) return null;
-  const perHour = convertDistance(meters, unit) / (ms / 3_600_000);
-  return `${perHour.toFixed(1)} ${unitLabel(unit)}/h`;
+  return convertDistance(meters, unit) / (ms / 3_600_000);
 }
 
 /**

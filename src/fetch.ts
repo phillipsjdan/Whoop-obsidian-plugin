@@ -1,6 +1,6 @@
 import { ApiClient, NotFoundError } from "./client.ts";
 import {
-  Cycle,
+  BodyMeasurement,
   DayContext,
   PaginatedResponse,
   Recovery,
@@ -83,8 +83,20 @@ export async function getWorkoutsForDay(
     .sort((a, b) => new Date(b.start).getTime() - new Date(a.start).getTime());
 }
 
-export function getCycles(client: ApiClient, start: Date, end: Date): Promise<Cycle[]> {
-  return fetchPaginated<Cycle>(client, "/cycle", start, end);
+/**
+ * The user's body measurements. Not paginated and not date-ranged — this is a
+ * single current record, which is why it is cached rather than fetched per
+ * workout.
+ */
+export async function getBodyMeasurement(
+  client: ApiClient
+): Promise<BodyMeasurement | null> {
+  try {
+    return (await client.get("/user/measurement/body")) as BodyMeasurement;
+  } catch (e) {
+    if (e instanceof NotFoundError) return null;
+    throw e;
+  }
 }
 
 export function getRecoveries(
@@ -100,7 +112,7 @@ export function getSleeps(client: ApiClient, start: Date, end: Date): Promise<Sl
 }
 
 /**
- * Gathers the cycle, recovery and sleep behind a given local day.
+ * Gathers the recovery and sleep behind a given local day.
  *
  * Each part is fetched independently and a failure yields null rather than
  * throwing. This data decorates a workout; it is never the reason the user ran
@@ -115,17 +127,16 @@ export async function getDayContext(
   // Sleep for "this day" began the evening before, so the window opens early.
   const sleepStart = addLocalDays(start, -1);
 
-  const [cycles, recoveries, sleeps] = await Promise.all([
-    optional(() => getCycles(client, start, end), "cycle"),
+  const [recoveries, sleeps] = await Promise.all([
     optional(() => getRecoveries(client, start, end), "recovery"),
     optional(() => getSleeps(client, sleepStart, end), "sleep"),
   ]);
 
+  const sleep = pickSleep(sleeps, start, end);
   return {
     date: formatLocalDate(date),
-    cycle: pickCycle(cycles, start, end),
-    recovery: recoveries[0] ?? null,
-    sleep: pickSleep(sleeps, start, end),
+    recovery: pickRecovery(recoveries, sleep),
+    sleep,
   };
 }
 
@@ -141,13 +152,20 @@ async function optional<T>(run: () => Promise<T[]>, label: string): Promise<T[]>
   }
 }
 
-/** The cycle that starts within the day, falling back to whatever came back. */
-function pickCycle(cycles: Cycle[], start: Date, end: Date): Cycle | null {
-  const withinDay = cycles.find((c) => {
-    const t = new Date(c.start).getTime();
-    return t >= start.getTime() && t < end.getTime();
-  });
-  return withinDay ?? cycles[0] ?? null;
+/**
+ * The recovery belonging to a given night.
+ *
+ * v2 keys a recovery to the sleep it followed, so this is an identity match
+ * rather than "whichever record the day range happened to return first". A night
+ * WHOOP has not scored a recovery for yields null, which is the honest answer —
+ * the previous positional pick would have attached a neighbouring day's numbers.
+ */
+export function pickRecovery(
+  recoveries: Recovery[],
+  sleep: Sleep | null
+): Recovery | null {
+  if (!sleep) return recoveries[0] ?? null;
+  return recoveries.find((r) => r.sleep_id && r.sleep_id === sleep.id) ?? null;
 }
 
 /**

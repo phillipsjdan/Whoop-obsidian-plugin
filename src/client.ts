@@ -3,6 +3,12 @@ import { requestUrl } from "obsidian";
 const BASE_URL = "https://api.prod.whoop.com/developer/v2";
 const MAX_RETRIES = 3;
 
+/**
+ * Server-side failures worth trying again. A gateway hiccup on a phone's
+ * connection is the ordinary case, not a signal that the request was wrong.
+ */
+const RETRYABLE_STATUSES = new Set([500, 502, 503, 504]);
+
 export class NotFoundError extends Error {
   constructor(path: string) {
     super(`Not found: ${path}`);
@@ -63,6 +69,17 @@ export class WhoopClient implements ApiClient {
           continue;
         }
         throw new RateLimitError(path);
+      }
+
+      if (RETRYABLE_STATUSES.has(resp.status)) {
+        if (attempt < MAX_RETRIES) {
+          await sleep(backoffMs);
+          backoffMs *= 2;
+          continue;
+        }
+        throw new Error(
+          `WHOOP API returned ${resp.status} for ${path} after ${MAX_RETRIES + 1} attempts`
+        );
       }
 
       if (resp.status === 401 || resp.status === 403) {

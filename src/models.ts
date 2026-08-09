@@ -119,23 +119,6 @@ export interface PaginatedResponse<T> {
  * than printing a blank.
  */
 
-export interface CycleScore {
-  strain?: number;
-  kilojoule?: number;
-  average_heart_rate?: number;
-  max_heart_rate?: number;
-}
-
-export interface Cycle {
-  id: number;
-  start: string;
-  /** Absent while the cycle is still the current one. */
-  end?: string | null;
-  timezone_offset?: string;
-  score_state?: string;
-  score?: CycleScore;
-}
-
 export interface RecoveryScore {
   /** True while WHOOP is still establishing a baseline; the score is unreliable. */
   user_calibrating?: boolean;
@@ -190,11 +173,28 @@ export interface Sleep {
   score?: SleepScore;
 }
 
-/** The day a workout happened in, as far as WHOOP knows. Any part may be absent. */
+/**
+ * Height, weight and max heart rate. Only the max heart rate is used — it is the
+ * denominator that turns a bare bpm figure into an intensity.
+ */
+export interface BodyMeasurement {
+  height_meter?: number;
+  weight_kilogram?: number;
+  max_heart_rate?: number;
+}
+
+/**
+ * The day a workout happened in, as far as WHOOP knows. Either part may be
+ * absent.
+ *
+ * Day strain is deliberately not here. The cycle endpoint reports strain
+ * accumulated so far, not the day's total or the app's strain target, so for a
+ * workout filed the same day it is a snapshot that is stale by the time it is
+ * read — and reading like a settled figure is worse than saying nothing.
+ */
 export interface DayContext {
   /** Local calendar day, YYYY-MM-DD — identifies the summary in a note. */
   date: string;
-  cycle: Cycle | null;
   recovery: Recovery | null;
   sleep: Sleep | null;
 }
@@ -202,7 +202,7 @@ export interface DayContext {
 /** True when there is at least one number worth writing a sentence about. */
 export function hasDayContext(context: DayContext | null): boolean {
   if (!context) return false;
-  return Boolean(context.cycle?.score || context.recovery?.score || context.sleep?.score);
+  return Boolean(context.recovery?.score || context.sleep?.score);
 }
 
 /**
@@ -242,11 +242,27 @@ export function sleepNeededMs(sleep: Sleep): number | null {
   return sawBaseline && total > 0 ? total : null;
 }
 
-/** Human-readable name for a WHOOP sport_id. */
+/**
+ * Human-readable name for a WHOOP sport_id.
+ *
+ * v2 populates `sport_name` in lower case ("running"), which would otherwise put
+ * a lower-case heading on every note. The lookup table holds the presentable
+ * form, including the ones blind title-casing would mangle — "HIIT", not "Hiit".
+ * A name that is not simply the table's entry in another case is left alone, so
+ * anything WHOOP starts sending with its own capitalisation survives.
+ */
 export function sportName(workout: Pick<Workout, "sport_id" | "sport_name">): string {
   const explicit = workout.sport_name?.trim();
-  if (explicit) return explicit;
-  return SPORT_NAMES[workout.sport_id] ?? `Sport ${workout.sport_id}`;
+  const known = SPORT_NAMES[workout.sport_id];
+
+  if (!explicit) return known ?? `Sport ${workout.sport_id}`;
+  if (known && explicit.toLowerCase() === known.toLowerCase()) return known;
+  return explicit === explicit.toLowerCase() ? titleCase(explicit) : explicit;
+}
+
+/** Capitalises each word, leaving separators like "/" and "-" in place. */
+function titleCase(text: string): string {
+  return text.replace(/[\p{L}\p{N}]+/gu, (word) => word[0].toUpperCase() + word.slice(1));
 }
 
 export const SPORT_NAMES: Record<number, string> = {

@@ -20,7 +20,7 @@ You need your own WHOOP developer app; there is no shared key.
    |-------|-------|
    | **Name** | Anything, e.g. `Obsidian workout insert` |
    | **Redirect URI** | `obsidian://whoop-workout-callback` |
-   | **Scopes** | `offline`, `read:workout`, `read:cycles`, `read:recovery`, `read:sleep` |
+   | **Scopes** | `offline`, `read:workout`, `read:recovery`, `read:sleep`, `read:body_measurement` |
    | **Contacts** | Your email address |
 
    The redirect URI must match **exactly** — no trailing slash, all lowercase. This is the custom protocol Obsidian registers on your machine, which is how the browser hands the authorization back to the app.
@@ -31,11 +31,11 @@ You need your own WHOOP developer app; there is no shared key.
    |-------|-----------|
    | `offline` | Refreshing the access token, so you connect once rather than daily |
    | `read:workout` | The workout itself — every table row |
-   | `read:cycles` | Day strain, in the day context sentence |
    | `read:recovery` | Recovery score, resting heart rate, HRV, blood oxygen |
    | `read:sleep` | Sleep duration, performance and efficiency |
+   | `read:body_measurement` | Your max heart rate, for the percentages on the HR rows |
 
-   The last three are only used by the **day context sentence**. Turn that setting off and the plugin never calls those endpoints — but WHOOP still requires the scopes to be granted at authorization time if you want the option later. `read:body_measurement` and `read:profile` are never requested: the plugin does not need to know who you are or what you weigh.
+`read:recovery` and `read:sleep` are used only by the **day context sentence**; `read:body_measurement` only by the heart-rate percentages. Turn a setting off and its endpoints are never called — but WHOOP grants scopes at authorization time, so they must be on the app if you want the option later. Only the max heart rate is read from the body measurement; height and weight are ignored. `read:cycles` and `read:profile` are never requested.
 4. Save the app and copy its **Client ID** and **Client Secret**.
 5. In Obsidian, open **Settings → WHOOP workout insert**, paste both values, then click **Connect**.
 6. A browser window opens on WHOOP's authorization page. Approve access, and your browser hands off to Obsidian — the modal closes and the status flips to *connected*.
@@ -44,12 +44,12 @@ You need your own WHOOP developer app; there is no shared key.
 
 ### Upgrading from a version before the day context
 
-WHOOP grants scopes when you approve access, so a token issued against the old `offline read:workout` app **cannot** read cycle, recovery or sleep — no matter what the plugin asks for afterwards. If you connected before those scopes existed:
+WHOOP grants scopes when you approve access, so a token issued against a narrower app **cannot** read recovery, sleep or body measurement — no matter what the plugin asks for afterwards. If you connected before those scopes existed:
 
-1. Add `read:cycles`, `read:recovery` and `read:sleep` to your app on developer.whoop.com and save.
+1. Add `read:recovery`, `read:sleep` and `read:body_measurement` to your app on developer.whoop.com and save.
 2. In **Settings → WHOOP workout insert**, click **Reconnect** and approve again.
 
-Until you do, workouts insert exactly as before and the day context sentence is silently skipped — the failed calls are logged to the developer console and nothing is written in their place. Nothing breaks; the sentence just never appears.
+Until you do, workouts insert exactly as before; the day context sentence and the heart-rate percentages are silently skipped. The failed calls are logged to the developer console and nothing is written in their place. Nothing breaks — those parts just never appear.
 
 ### A note on credentials
 
@@ -91,7 +91,6 @@ Suggests a path from the workout's date and sport (both the folder and the filen
 Recovery that morning was 62%, with a resting heart rate of 48 bpm, HRV of 78 ms
 and blood oxygen at 96%. The night before brought 7 h 12 min of sleep against a
 need of 8 h 22 min — 86% sleep performance, 93% efficiency and 9 disturbances.
-Day strain reached 14.2.
 <!-- whoop-day: 2026-08-09 -->
 
 ### 🏃 Running — 2026-08-09 07:12
@@ -102,8 +101,8 @@ Day strain reached 14.2.
 | Duration | 42 min |
 | Distance | 8.02 km |
 | Pace | 5:14 /km |
-| Avg HR | 148 bpm |
-| Max HR | 167 bpm |
+| Avg HR | 148 bpm (80% of max) |
+| Max HR | 167 bpm (90% of max) |
 | Calories | 612 kcal |
 | Calorie rate | 874 kcal/h |
 | Strain rate | 17.7 /h |
@@ -120,7 +119,9 @@ The workout block is self-contained: one heading, one table, no navigation links
 
 ### The day context sentence
 
-Recovery, sleep and day strain describe the **day**, not the workout, so they are written as prose above the block rather than as rows inside the table — putting them in the table would imply they belong to that run.
+Recovery and sleep describe the **day**, not the workout, so they are written as prose above the block rather than as rows inside the table — putting them in the table would imply they belong to that run. Both are settled figures: WHOOP scores them once in the morning and they do not move.
+
+**Day strain is deliberately not included.** The cycle endpoint reports strain accumulated so far rather than the day's total, and WHOOP cycles run wake-to-wake, so for a workout filed the same day it is a snapshot that is stale by the time you read it — while reading like a settled figure. The app's Strain Target, which would be the useful number, is a Strain Coach feature and is not exposed on the developer platform at all. So the plugin says nothing rather than something misleading, and does not request `read:cycles`.
 
 It is written **once per note**, with the first WHOOP block added to the page:
 
@@ -132,11 +133,12 @@ It is written **once per note**, with the first WHOOP block added to the page:
 
 Every clause is dropped when WHOOP has no number for it, so a partially scored day still reads as English. A day with nothing scored at all produces no sentence rather than an empty one. If WHOOP is still calibrating your baseline, the sentence says so instead of quoting the recovery score as fact.
 
-Needs the `read:cycles`, `read:recovery` and `read:sleep` scopes — see [upgrading](#upgrading-from-a-version-before-the-day-context) if you connected before they were requested. Switch it off under **Settings → Day context sentence**, and those endpoints are never called.
+Needs the `read:recovery` and `read:sleep` scopes — see [upgrading](#upgrading-from-a-version-before-the-day-context) if you connected before they were requested. Switch it off under **Settings → Day context sentence**, and those endpoints are never called.
 
 ### Details
 
 - **Pace** is computed (duration ÷ distance) because WHOOP does not report it. Cycling and other wheeled/downhill sports get **Avg speed** instead.
+- **Heart rate as a percentage of max** uses the max WHOOP holds for you, read once from `/user/measurement/body` and cached in settings for a month — it moves over years, not workouts. The percentage is dropped when the max is unknown, and when a reading exceeds it, since that means the max is stale rather than that you trained at 104%. Off via settings, and the endpoint is then never called.
 - **Heart-rate zone rows** carry both the time and its share of the workout, followed by a combined **time in zone 3+**. Zones with no time in them are omitted, and the whole block can be switched off in settings. WHOOP returns these under `zone_durations` on v2 and `zone_duration` on v1; both are read.
 - **Per-hour rates** (calorie burn, strain) make workouts of different lengths comparable. Strain is a logarithmic 0–21 score, so its rate is a rough intensity signal rather than a physical quantity. Off via settings.
 - **Net elevation** appears alongside the gain only when the two differ — on a loop that returns to its start, the gain already tells the whole story.
@@ -160,14 +162,23 @@ timezone_offset: "-07:00"
 duration_minutes: 42
 strain: 12.4
 distance_km: 8.02
+pace_seconds_per_km: 314
 average_heart_rate: 148
 max_heart_rate: 167
 kilocalories: 612
+elevation_gain_m: 148
+zone_2_minutes: 15
+zone_3_minutes: 19
+zone_4_minutes: 5
+zone_5_minutes: 3
+percent_recorded: 98
 tags:
   - whoop
   - workout
 ---
 ```
+
+Pace and speed are written as **numbers**, not as the table's `5:14 /km`, so they sort and average in a Dataview or Bases query. Distance sports get `pace_seconds_per_km` (or `_per_mile`); wheeled sports get `avg_speed_kmh` (or `_mph`). Field names follow the distance-unit setting. Every field is omitted when the workout has no value for it.
 
 ---
 
@@ -182,8 +193,9 @@ tags:
 | Sport emoji | on | Emoji prefix on the heading |
 | Heart rate zone breakdown | on | One row per non-empty zone, with its share, plus a zone 3+ total |
 | Per-hour rates | on | Calorie burn and strain per hour |
+| Heart rate as a percentage of max | on | Needs `read:body_measurement`; max HR is cached and re-read monthly |
 | Data completeness | on | `percent_recorded` row |
-| Day context sentence | on | Recovery, sleep and day strain above the first workout in a note |
+| Day context sentence | on | Recovery and sleep above the first workout in a note |
 | Default heading | `## WHOOP` | Pre-filled in the heading prompt |
 | Position within the section | End of the section | Or directly under the heading |
 | New note folder | `WHOOP Workouts` | Empty for the vault root |
@@ -299,7 +311,7 @@ Adapted from [benstraw/obsidian-whoop-plugin](https://github.com/benstraw/obsidi
 - **OAuth `state` is validated.** The reference generates a `state` but never checks it on callback. Any process on the machine can fire an `obsidian://` URL, so an unchecked callback lets someone else's authorization code be exchanged for tokens stored in your vault. Here the returned state is compared (constant-time) against the pending one, expires after ten minutes, and is cleared before the exchange so a replay cannot reuse it.
 - **HTTP status handling actually runs.** `requestUrl` throws on non-2xx by default, which made the reference's 429/404 branches unreachable; this client passes `throw: false` and honours `Retry-After`.
 - **No `writeNote`.** The reference's `writeNote` calls `vault.modify` on any existing file. This plugin has no such path: heading insertion splices through `vault.process`, and note creation refuses to overwrite.
-- **Scopes kept read-only and minimal.** `offline read:workout read:cycles read:recovery read:sleep`; `read:body_measurement` and `read:profile` are never requested. The cycle, recovery and sleep scopes back the day context sentence and nothing else, and the endpoints go untouched when that setting is off.
+- **Scopes kept read-only and minimal.** `offline read:workout read:recovery read:sleep read:body_measurement`; `read:cycles` and `read:profile` are never requested. Each scope beyond the workout backs exactly one optional feature, and its endpoints go untouched when that feature is off.
 - **Day boundaries are local**, not UTC, so an evening workout does not show up on tomorrow's date.
 - **Token refreshes are single-flight.** WHOOP rotates the refresh token on every use, so two overlapping refreshes leave one holding a retired token — and whichever saved last would persist it, breaking the connection until you reconnect by hand. Overlapping callers share one in-flight refresh.
 - **Setext headings are recognised.** Only relevant here because this plugin writes into existing notes, but a missed heading is a missed section boundary, which puts the workout in the wrong place.
