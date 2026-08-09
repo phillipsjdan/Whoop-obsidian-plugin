@@ -1,0 +1,36 @@
+{
+  "name": "whoop-workout-insert",
+  "version": "1.0.0",
+  "description": "Obsidian plugin to pick a specific WHOOP workout and insert it into the notes you already maintain",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "node esbuild.config.mjs production",
+    "lint": "tsc --noEmit",
+    "lint:obsidian": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "obsidian",
+    "whoop",
+    "fitness",
+    "workout",
+    "running"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@typescript-eslint/parser": "^8.58.0",
+    "builtin-modules": "^5.0.0",
+    "esbuild": "^0.24.0",
+    "eslint": "^9.39.4",
+    "eslint-plugin-obsidianmd": "^0.1.9",
+    "obsidian": "latest",
+    "typescript": "^5.6.0",
+    "vitest": "^4.0.18"
+  }
+}

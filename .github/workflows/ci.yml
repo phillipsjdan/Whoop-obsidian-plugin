@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  pull_request:
+    # The repository has no default branch yet; cover whichever name is used.
+    branches: [main, master]
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # One version, read from .nvmrc so CI and local development cannot drift.
+      # A matrix would buy nothing: the source touches no Node APIs beyond the
+      # global crypto, and esbuild emits the same Electron-targeted bundle
+      # whichever Node runs it.
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run lint
+
+      - name: Obsidian plugin lint
+        run: npm run lint:obsidian
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Check the plugin bundle was produced
+        run: test -s main.js
+
+      - name: Check manifest and package versions agree
+        run: |
+          manifest=$(node -p "require('./manifest.json').version")
+          pkg=$(node -p "require('./package.json').version")
+          if [ "$manifest" != "$pkg" ]; then
+            echo "manifest.json ($manifest) and package.json ($pkg) disagree on the version" >&2
+            exit 1
+          fi
+          echo "Version $manifest"

@@ -1,0 +1,140 @@
+/* WHOOP Workout Insert */
+
+.whoop-workout-modal .setting-item {
+  border-top: none;
+  padding: 8px 0;
+}
+
+.whoop-workout-modal .whoop-workout-instructions {
+  background: var(--background-secondary);
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  font-size: 0.9em;
+  line-height: 1.6;
+}
+
+.whoop-workout-modal .whoop-workout-instructions ol {
+  margin: 0 0 0 16px;
+  padding: 0;
+}
+
+.whoop-workout-modal .whoop-workout-instructions li {
+  margin-bottom: 4px;
+}
+
+.whoop-workout-modal .whoop-workout-wide-input {
+  width: 100%;
+}
+
+.whoop-workout-modal .whoop-workout-prompt-row {
+  display: block;
+}
+
+.whoop-workout-modal .whoop-workout-prompt-row .setting-item-control {
+  justify-content: stretch;
+}
+
+.whoop-workout-modal .whoop-workout-error {
+  color: var(--text-error);
+  font-size: 0.9em;
+  margin: 4px 0 0;
+}
+
+.whoop-workout-results {
+  margin-top: 8px;
+  /* vh keeps the list from eating a phone screen in landscape. */
+  max-height: min(320px, 45vh);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.whoop-workout-empty {
+  color: var(--text-muted);
+  font-size: 0.9em;
+  padding: 8px 2px;
+}
+
+.whoop-workout-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.whoop-workout-row:hover,
+.whoop-workout-row:focus-visible {
+  background: var(--background-modifier-hover);
+  border-color: var(--background-modifier-border);
+  outline: none;
+}
+
+.whoop-workout-row-emoji {
+  font-size: 1.3em;
+  line-height: 1;
+}
+
+.whoop-workout-row-body {
+  min-width: 0;
+}
+
+.whoop-workout-row-title {
+  font-weight: 600;
+}
+
+.whoop-workout-row-meta {
+  color: var(--text-muted);
+  font-size: 0.85em;
+}
+
+.whoop-workout-settings .whoop-workout-status {
+  margin-top: 0;
+}
+
+.whoop-workout-settings .whoop-workout-connected {
+  color: var(--color-green);
+  font-weight: 600;
+}
+
+.whoop-workout-settings .whoop-workout-disconnected {
+  color: var(--color-red);
+  font-weight: 600;
+}
+
+/* --- Mobile -------------------------------------------------------------- */
+
+.is-mobile .whoop-workout-row {
+  /* 44px is Apple's minimum comfortable tap target. */
+  min-height: 44px;
+  padding: 10px 12px;
+  gap: 12px;
+}
+
+.is-mobile .whoop-workout-row-meta {
+  font-size: 0.9em;
+}
+
+/* The date row carries prev/next/field/load; let it wrap instead of squashing
+   the field down to nothing on a phone. */
+.is-mobile .whoop-workout-picker .setting-item-control {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.is-mobile .whoop-workout-picker .whoop-workout-date-input {
+  flex: 1 1 55%;
+  min-width: 8em;
+}
+
+.is-mobile .whoop-workout-modal .whoop-workout-wide-input {
+  /* Stops iOS zooming the viewport when a field takes focus. */
+  font-size: 16px;
+}
+
+.is-mobile .whoop-workout-modal .setting-item {
+  padding: 10px 0;
+}
