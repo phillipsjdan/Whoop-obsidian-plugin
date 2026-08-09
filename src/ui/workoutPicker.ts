@@ -1,4 +1,4 @@
-import { App, Modal, Notice, Setting, TextComponent } from "obsidian";
+import { App, Modal, Notice, Platform, Setting, TextComponent } from "obsidian";
 import {
   addLocalDays,
   formatLocalDate,
@@ -72,6 +72,16 @@ class WorkoutPickerModal extends Modal {
       .addText((text) => {
         this.dateInput = text;
         text.setPlaceholder("YYYY-MM-DD").setValue(formatLocalDate(this.date));
+        text.inputEl.addClass("whoop-workout-date-input");
+
+        if (Platform.isMobile) {
+          // A soft keyboard is a poor way to type a date; iOS and Android both
+          // give a native picker for type="date", and its value is already
+          // YYYY-MM-DD. Reloading on change means no separate Load tap.
+          text.inputEl.type = "date";
+          text.inputEl.addEventListener("change", () => void this.load());
+        }
+
         // Listeners live on elements inside contentEl, which onClose empties.
         text.inputEl.addEventListener("keydown", (event: KeyboardEvent) => {
           if (event.key === "Enter") {

@@ -54,7 +54,9 @@ Asks which heading to file it under (pre-filled from settings, e.g. `## WHOOP`).
 
 - Type hashes (`## WHOOP`) to require that exact level; type a bare name (`WHOOP`) to match the first heading with that text at any level.
 - Matching ignores case, surrounding whitespace and inline emphasis. Headings inside fenced code blocks and inside YAML frontmatter are not matched.
+- Both heading styles are understood — `## Title` and `Title` underlined with `====` / `----` — so a setext heading correctly ends the section above it.
 - The workout goes into that heading's section — everything up to the next heading of equal or higher level. Whether it lands directly under the heading or after the content already there is a setting.
+- **If the workout is already in the note**, you are asked before a second copy goes in. Each inserted block ends with a hidden `<!-- whoop-workout: … -->` marker naming the workout it came from; it does not render in reading view.
 - **If the heading does not exist**, you are asked whether to append the heading and the workout to the end of the note, or cancel. Nothing is written unless you say so.
 - The splice is re-computed against the file's content at write time. If the note changed while the prompts were open, you get a notice and no write.
 
@@ -83,9 +85,10 @@ Suggests a path from the workout's date and sport (both the folder and the filen
 | Zone 4 time | 5 min |
 | Zone 5 time | 3 min |
 | Data completeness | 98% |
+<!-- whoop-workout: b5f2c1a0-1111-4a2b-9c3d-000000000001 -->
 ```
 
-The block is self-contained: one heading, one table, no navigation links or day-level sections, so it sits inside whatever structure your note already has.
+The block is self-contained: one heading, one table, no navigation links or day-level sections, so it sits inside whatever structure your note already has. The trailing HTML comment is invisible in reading view and is what lets the plugin notice a workout you have already filed.
 
 Details:
 
@@ -140,6 +143,27 @@ tags:
 
 ---
 
+## On iPhone and iPad
+
+The plugin is built for mobile and marked `isDesktopOnly: false`. Everything it touches — `requestUrl`, `registerObsidianProtocolHandler`, `crypto.getRandomValues`, the modal and settings APIs — is available in Obsidian mobile, and there is no Electron, Node or filesystem access anywhere in the source.
+
+Mobile-specific behaviour:
+
+- **The date field is a native picker.** On mobile the picker's date input is `type="date"`, so you get the iOS wheel rather than typing `YYYY-MM-DD` on a soft keyboard, and choosing a date reloads the list without a second tap. The `◀`/`▶` buttons still work.
+- **No autofocus.** Text prompts do not grab focus on mobile, which would otherwise throw up the keyboard and push the buttons off screen.
+- **Larger tap targets.** Workout rows are at least 44 pt tall, and the date row wraps rather than squashing.
+- **16 px inputs**, so iOS does not zoom the viewport when a field takes focus.
+- **The authorization URL is shown in a read-only field.** If the *Open authorization page* button does not hand off to Safari, tap that field to select the URL and paste it into the browser yourself. The same modal takes the resulting `obsidian://…` URL back.
+
+**I have not run this on a physical iPhone or iPad** — the work above is a source audit plus mobile-specific fixes, not a device test, and I have no way to run iOS from where this was built. The OAuth hand-off is the part most likely to need a real device: iOS custom URL schemes behave differently across browsers and Focus modes. Please try this checklist and tell me what breaks:
+
+1. Settings open and the client ID/secret fields are usable.
+2. **Connect** opens Safari on WHOOP's authorization page.
+3. Approving returns you to Obsidian and the status flips to *connected*. (If not: does the read-only URL field + manual paste work instead?)
+4. The picker's date field shows the iOS date wheel, and changing the date reloads the list.
+5. Workout rows are comfortably tappable and the list scrolls.
+6. Each of the three commands completes, and the heading prompt is usable with the keyboard up.
+
 ## Installing
 
 ### BRAT (recommended for testing)
@@ -184,7 +208,9 @@ Layout:
 | `src/ui/` | Picker, prompts, connect modal |
 | `src/main.ts` | Plugin entry point, commands, protocol handler |
 
-`src/insert.ts` is the riskiest code here and is tested accordingly: heading missing, heading at end of file, heading immediately followed by another heading, empty file, nested subsections, code fences, frontmatter, CRLF, and blank-line normalization.
+`src/insert.ts` is the riskiest code here and is tested accordingly: heading missing, heading at end of file, heading immediately followed by another heading, empty file, nested subsections, setext headings (as both target and section boundary), code fences, frontmatter, CRLF, and blank-line normalization.
+
+CI runs the typecheck, both lint passes, the tests and a production build on Node 20 and 22 for every pull request into `main`/`master`.
 
 ---
 
@@ -197,6 +223,8 @@ Adapted from [benstraw/obsidian-whoop-plugin](https://github.com/benstraw/obsidi
 - **No `writeNote`.** The reference's `writeNote` calls `vault.modify` on any existing file. This plugin has no such path: heading insertion splices through `vault.process`, and note creation refuses to overwrite.
 - **Scopes reduced** to `offline read:workout`.
 - **Day boundaries are local**, not UTC, so an evening workout does not show up on tomorrow's date.
+- **Token refreshes are single-flight.** WHOOP rotates the refresh token on every use, so two overlapping refreshes leave one holding a retired token — and whichever saved last would persist it, breaking the connection until you reconnect by hand. Overlapping callers share one in-flight refresh.
+- **Setext headings are recognised.** Only relevant here because this plugin writes into existing notes, but a missed heading is a missed section boundary, which puts the workout in the wrong place.
 - **Zone durations and `percent_recorded`** are rendered; the reference's daily template does not surface either.
 
 ## Licence

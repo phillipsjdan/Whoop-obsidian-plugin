@@ -5,6 +5,7 @@ import {
   REDIRECT_URI,
   SCOPES,
   TokenData,
+  TokenProvider,
   buildAuthUrl,
   needsRefresh,
   validateState,
@@ -91,6 +92,92 @@ describe("validateState", () => {
     expect(() =>
       validateState(pending, "abc123", NOW + AUTH_STATE_TTL_MS + 1)
     ).toThrow(/expired/);
+  });
+});
+
+describe("TokenProvider", () => {
+  /** Builds a provider over mutable settings, counting refresh calls. */
+  function harness(initial: TokenData | null, refreshImpl?: () => Promise<TokenData>) {
+    const state = { tokens: initial };
+    let calls = 0;
+    const provider = new TokenProvider(
+      () => ({ clientId: "id", clientSecret: "secret", tokens: state.tokens }),
+      async (t) => {
+        state.tokens = t;
+      },
+      async () => {
+        calls++;
+        return refreshImpl
+          ? refreshImpl()
+          : tokens({ access_token: `refreshed-${calls}`, expires_at: NOW + 3_600_000 });
+      }
+    );
+    return {
+      provider,
+      state,
+      refreshCalls: () => calls,
+    };
+  }
+
+  it("returns the stored token while it is still fresh", async () => {
+    const h = harness(tokens({ access_token: "still-good" }));
+    await expect(h.provider.getAccessToken(NOW)).resolves.toBe("still-good");
+    expect(h.refreshCalls()).toBe(0);
+  });
+
+  it("refreshes and persists when the token is near expiry", async () => {
+    const h = harness(tokens({ expires_at: NOW + 60_000 }));
+
+    await expect(h.provider.getAccessToken(NOW)).resolves.toBe("refreshed-1");
+    expect(h.refreshCalls()).toBe(1);
+    expect(h.state.tokens?.access_token).toBe("refreshed-1");
+  });
+
+  it("refuses when there is no stored token", async () => {
+    const h = harness(null);
+    await expect(h.provider.getAccessToken(NOW)).rejects.toThrow(/Not connected/);
+  });
+
+  it("collapses concurrent refreshes into one call", async () => {
+    // WHOOP rotates the refresh token, so a second concurrent refresh would
+    // present one the server has already retired.
+    let release!: (t: TokenData) => void;
+    const gate = new Promise<TokenData>((resolve) => {
+      release = resolve;
+    });
+    const h = harness(tokens({ expires_at: NOW + 60_000 }), () => gate);
+
+    const all = Promise.all([
+      h.provider.getAccessToken(NOW),
+      h.provider.getAccessToken(NOW),
+      h.provider.getAccessToken(NOW),
+    ]);
+    release(tokens({ access_token: "shared", expires_at: NOW + 3_600_000 }));
+
+    await expect(all).resolves.toEqual(["shared", "shared", "shared"]);
+    expect(h.refreshCalls()).toBe(1);
+  });
+
+  it("retries after a failed refresh rather than caching the failure", async () => {
+    let attempt = 0;
+    const h = harness(tokens({ expires_at: NOW + 60_000 }), async () => {
+      attempt++;
+      if (attempt === 1) throw new Error("network down");
+      return tokens({ access_token: "second-try", expires_at: NOW + 3_600_000 });
+    });
+
+    await expect(h.provider.getAccessToken(NOW)).rejects.toThrow("network down");
+    await expect(h.provider.getAccessToken(NOW)).resolves.toBe("second-try");
+    expect(h.refreshCalls()).toBe(2);
+  });
+
+  it("stops refreshing once the stored token is fresh again", async () => {
+    const h = harness(tokens({ expires_at: NOW + 60_000 }));
+
+    await h.provider.getAccessToken(NOW);
+    await h.provider.getAccessToken(NOW);
+
+    expect(h.refreshCalls()).toBe(1);
   });
 });
 

@@ -13,4 +13,12 @@ export class TextComponent {}
 export class TFile {}
 export class TFolder {}
 export class MarkdownView {}
+export const Platform = {
+  isMobile: false,
+  isDesktop: true,
+  isIosApp: false,
+  isAndroidApp: false,
+  isPhone: false,
+  isTablet: false,
+};
 export const normalizePath = (p: string) => p.replace(/\/{2,}/g, "/");

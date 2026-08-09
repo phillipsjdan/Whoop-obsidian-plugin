@@ -43,8 +43,10 @@
 
 .whoop-workout-results {
   margin-top: 8px;
-  max-height: 320px;
+  /* vh keeps the list from eating a phone screen in landscape. */
+  max-height: min(320px, 45vh);
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .whoop-workout-empty {
@@ -100,4 +102,39 @@
 .whoop-workout-settings .whoop-workout-disconnected {
   color: var(--color-red);
   font-weight: 600;
+}
+
+/* --- Mobile -------------------------------------------------------------- */
+
+.is-mobile .whoop-workout-row {
+  /* 44px is Apple's minimum comfortable tap target. */
+  min-height: 44px;
+  padding: 10px 12px;
+  gap: 12px;
+}
+
+.is-mobile .whoop-workout-row-meta {
+  font-size: 0.9em;
+}
+
+/* The date row carries prev/next/field/load; let it wrap instead of squashing
+   the field down to nothing on a phone. */
+.is-mobile .whoop-workout-picker .setting-item-control {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.is-mobile .whoop-workout-picker .whoop-workout-date-input {
+  flex: 1 1 55%;
+  min-width: 8em;
+}
+
+.is-mobile .whoop-workout-modal .whoop-workout-wide-input {
+  /* Stops iOS zooming the viewport when a field takes focus. */
+  font-size: 16px;
+}
+
+.is-mobile .whoop-workout-modal .setting-item {
+  padding: 10px 0;
 }

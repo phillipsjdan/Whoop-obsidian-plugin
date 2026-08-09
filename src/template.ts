@@ -61,16 +61,21 @@ interface ZoneDurationLike {
   zone_five_milli: number;
 }
 
-/** The one-line description used in the picker and in Notices. */
-export function describeWorkout(workout: Workout, unit: DistanceUnit): string {
-  const parts = [
-    sportName(workout),
-    formatDateTime(workout.start, workout.timezone_offset, "HH:mm"),
-    formatDuration(durationMs(workout.start, workout.end)),
-  ];
-  const distance = workout.score?.distance_meter ?? 0;
-  if (distance > 0) parts.push(formatDistance(distance, unit));
-  return parts.join(" — ");
+const MARKER_PREFIX = "<!-- whoop-workout:";
+
+/**
+ * Hidden tag identifying which workout a block came from. HTML comments do not
+ * render in reading view, and this is the only way to tell later that a given
+ * workout is already in a note.
+ */
+export function workoutMarker(id: string): string {
+  // A workout id is a UUID, but never let one close the comment early.
+  return `${MARKER_PREFIX} ${id.replace(/--+>/g, "")} -->`;
+}
+
+/** True when a note already contains a block for this workout. */
+export function containsWorkout(content: string, id: string): boolean {
+  return content.includes(workoutMarker(id));
 }
 
 /**
@@ -98,18 +103,18 @@ export function renderWorkoutSnippet(
     lines.push(
       `_No score available for this workout (${workout.score_state ?? "unknown state"})._`
     );
-    return lines.join("\n");
+  } else {
+    lines.push("| Metric | Value |", "|--------|-------|");
+    for (const [label, value] of rows) {
+      lines.push(`| ${label} | ${escapeCell(value)} |`);
+    }
+
+    if (workout.score_state && workout.score_state !== "SCORED") {
+      lines.push("", `_Score state: ${workout.score_state}._`);
+    }
   }
 
-  lines.push("| Metric | Value |", "|--------|-------|");
-  for (const [label, value] of rows) {
-    lines.push(`| ${label} | ${escapeCell(value)} |`);
-  }
-
-  if (workout.score_state && workout.score_state !== "SCORED") {
-    lines.push("", `_Score state: ${workout.score_state}._`);
-  }
-
+  lines.push(workoutMarker(workout.id));
   return lines.join("\n");
 }
 

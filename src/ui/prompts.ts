@@ -1,4 +1,4 @@
-import { App, Modal, Setting } from "obsidian";
+import { App, Modal, Platform, Setting } from "obsidian";
 
 export interface TextPromptOptions {
   title: string;
@@ -55,10 +55,14 @@ class TextPromptModal extends Modal {
           this.clearError();
         });
       text.inputEl.addClass("whoop-workout-wide-input");
-      window.setTimeout(() => {
-        text.inputEl.focus();
-        text.inputEl.select();
-      }, 0);
+      if (!Platform.isMobile) {
+        // Autofocus on mobile throws up the soft keyboard and pushes the
+        // buttons off screen before the value has even been read.
+        window.setTimeout(() => {
+          text.inputEl.focus();
+          text.inputEl.select();
+        }, 0);
+      }
       // Listeners live on elements inside contentEl, which onClose empties.
       text.inputEl.addEventListener("keydown", (event: KeyboardEvent) => {
         if (event.key === "Enter") {

@@ -49,33 +49,87 @@ describe("parseHeadingInput", () => {
 
 describe("scanHeadings", () => {
   it("skips YAML frontmatter", () => {
-    const lines = ["---", "title: Note", "tags: [a]", "---", "", "## WHOOP"].slice();
-    expect(scanHeadings(lines)).toEqual([{ index: 5, level: 2, text: "WHOOP" }]);
+    const lines = ["---", "title: Note", "tags: [a]", "---", "", "## WHOOP"];
+    expect(scanHeadings(lines)).toEqual([
+      { index: 5, level: 2, text: "WHOOP", contentStart: 6 },
+    ]);
+  });
+
+  it("treats a leading fenced block as frontmatter even if it is not valid YAML", () => {
+    // Obsidian parses any leading --- … --- as frontmatter; `#` opens a YAML
+    // comment, so a heading in there is metadata, not a section to write into.
+    expect(scanHeadings(["---", "", "## WHOOP", "", "---", "", "## Other"])).toEqual([
+      { index: 6, level: 2, text: "Other", contentStart: 7 },
+    ]);
+  });
+
+  it("does not treat an unterminated leading --- as frontmatter", () => {
+    expect(scanHeadings(["---", "", "## WHOOP"])).toEqual([
+      { index: 2, level: 2, text: "WHOOP", contentStart: 3 },
+    ]);
+  });
+
+  it("only treats --- as frontmatter on the very first line", () => {
+    expect(scanHeadings(["", "---", "title: x", "---", "## WHOOP"])).toContainEqual({
+      index: 4,
+      level: 2,
+      text: "WHOOP",
+      contentStart: 5,
+    });
   });
 
   it("ignores headings inside fenced code blocks", () => {
-    const lines = [
-      "# Note",
-      "",
-      "```md",
-      "## WHOOP",
-      "```",
-      "",
-      "## WHOOP",
-    ];
+    const lines = ["# Note", "", "```md", "## WHOOP", "```", "", "## WHOOP"];
     expect(scanHeadings(lines)).toEqual([
-      { index: 0, level: 1, text: "Note" },
-      { index: 6, level: 2, text: "WHOOP" },
+      { index: 0, level: 1, text: "Note", contentStart: 1 },
+      { index: 6, level: 2, text: "WHOOP", contentStart: 7 },
     ]);
   });
 
   it("handles tilde fences and longer backtick runs", () => {
     const lines = ["~~~", "## Hidden", "~~~", "````", "## Also hidden", "````", "## Real"];
-    expect(scanHeadings(lines)).toEqual([{ index: 6, level: 2, text: "Real" }]);
+    expect(scanHeadings(lines)).toEqual([
+      { index: 6, level: 2, text: "Real", contentStart: 7 },
+    ]);
   });
 
   it("requires a space after the hashes", () => {
     expect(scanHeadings(["##NotAHeading"])).toEqual([]);
+  });
+
+  it("reads setext headings, pointing contentStart past the underline", () => {
+    expect(scanHeadings(["Big Title", "====", "", "Sub", "----"])).toEqual([
+      { index: 0, level: 1, text: "Big Title", contentStart: 2 },
+      { index: 3, level: 2, text: "Sub", contentStart: 5 },
+    ]);
+  });
+
+  it("reads a setext heading that follows an ATX heading", () => {
+    expect(scanHeadings(["# One", "Two", "==="])).toEqual([
+      { index: 0, level: 1, text: "One", contentStart: 1 },
+      { index: 1, level: 1, text: "Two", contentStart: 3 },
+    ]);
+  });
+
+  it("takes the whole paragraph as the heading text", () => {
+    expect(scanHeadings(["first", "second", "==="])).toEqual([
+      { index: 0, level: 1, text: "first second", contentStart: 3 },
+    ]);
+  });
+
+  it("leaves a standalone --- as a thematic break", () => {
+    expect(scanHeadings(["para", "", "---", "", "more"])).toEqual([]);
+  });
+
+  it("does not read list items, quotes or table rows as setext text", () => {
+    expect(scanHeadings(["- item", "---"])).toEqual([]);
+    expect(scanHeadings(["> quoted", "---"])).toEqual([]);
+    expect(scanHeadings(["| a | b |", "---"])).toEqual([]);
+    expect(scanHeadings(["    indented code", "---"])).toEqual([]);
+  });
+
+  it("ignores a setext underline inside a code fence", () => {
+    expect(scanHeadings(["```", "Title", "=====", "```"])).toEqual([]);
   });
 });
 
@@ -247,6 +301,87 @@ describe("insertUnderHeading", () => {
     const twice = insertUnderHeading(once, target("## WHOOP"), "### Ride\n\nsecond").content;
 
     expect(twice).toBe(["## WHOOP", "", BLOCK, "", "### Ride", "", "second", ""].join("\n"));
+  });
+
+  it("stops at a setext heading instead of running past it", () => {
+    // Regression: with only ATX headings recognised, the section ran to EOF and
+    // the workout landed under "Later Section" — a different section entirely.
+    const content = [
+      "## WHOOP",
+      "",
+      "entry",
+      "",
+      "Later Section",
+      "=============",
+      "",
+      "prose",
+      "",
+    ].join("\n");
+    const result = insertUnderHeading(content, target("## WHOOP"), BLOCK);
+
+    expect(result.content).toBe(
+      [
+        "## WHOOP",
+        "",
+        "entry",
+        "",
+        BLOCK,
+        "",
+        "Later Section",
+        "=============",
+        "",
+        "prose",
+        "",
+      ].join("\n")
+    );
+  });
+
+  it("stops at a dash-underlined setext heading", () => {
+    const content = ["## WHOOP", "", "entry", "", "Later", "-----", "", "prose", ""].join("\n");
+    const result = insertUnderHeading(content, target("## WHOOP"), BLOCK);
+
+    expect(result.content.indexOf(BLOCK)).toBeLessThan(result.content.indexOf("Later"));
+  });
+
+  it("can target a setext heading itself", () => {
+    const content = ["Training log", "------------", "", "old entry", "", "## Other", ""].join("\n");
+    const result = insertUnderHeading(content, target("Training log"), BLOCK);
+
+    expect(result.found).toBe(true);
+    expect(result.content).toBe(
+      ["Training log", "------------", "", "old entry", "", BLOCK, "", "## Other", ""].join("\n")
+    );
+  });
+
+  it("keeps a deeper ATX heading inside a setext section", () => {
+    // "Training log" is H1 here, so the H2 below nests inside it rather than
+    // ending it, and the block belongs after both.
+    const content = ["Training log", "============", "", "## Detail", "", "old entry", ""].join("\n");
+    const result = insertUnderHeading(content, target("Training log"), BLOCK);
+
+    expect(result.content).toBe(
+      ["Training log", "============", "", "## Detail", "", "old entry", "", BLOCK, ""].join("\n")
+    );
+  });
+
+  it("never splits a setext heading from its underline", () => {
+    const content = ["Training log", "============", "", "old entry", ""].join("\n");
+    const result = insertUnderHeading(content, target("Training log"), BLOCK, "top");
+
+    expect(result.content).toBe(
+      ["Training log", "============", "", BLOCK, "", "old entry", ""].join("\n")
+    );
+  });
+
+  it("honours a level requirement against a setext heading", () => {
+    const content = ["Training log", "------------", "", "entry", ""].join("\n");
+    expect(insertUnderHeading(content, target("## Training log"), BLOCK).found).toBe(true);
+    expect(insertUnderHeading(content, target("# Training log"), BLOCK).found).toBe(false);
+  });
+
+  it("does not find a heading buried in frontmatter", () => {
+    const content = "---\ntitle: x\n## WHOOP\n---\n\nprose\n";
+    expect(insertUnderHeading(content, target("## WHOOP"), BLOCK).found).toBe(false);
   });
 
   it("leaves everything outside the section byte-identical", () => {

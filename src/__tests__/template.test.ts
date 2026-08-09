@@ -2,12 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_TEMPLATE_OPTIONS,
   TemplateOptions,
-  describeWorkout,
+  containsWorkout,
   normalizeNotePath,
   renderWorkoutNote,
   renderWorkoutSnippet,
   sanitizeFileName,
   suggestNotePath,
+  workoutMarker,
 } from "../template.ts";
 import { SPORT_NAMES, sportName } from "../models.ts";
 import {
@@ -79,6 +80,7 @@ describe("renderWorkoutSnippet", () => {
         "| Zone 4 time | 5 min |",
         "| Zone 5 time | 3 min |",
         "| Data completeness | 98% |",
+        "<!-- whoop-workout: b5f2c1a0-1111-4a2b-9c3d-000000000001 -->",
       ].join("\n")
     );
   });
@@ -207,13 +209,43 @@ describe("renderWorkoutSnippet", () => {
   });
 });
 
-describe("describeWorkout", () => {
-  it("summarises a workout for the picker", () => {
-    expect(describeWorkout(runningWorkout(), "km")).toBe("Running — 07:12 — 42 min — 8.02 km");
+describe("workout markers", () => {
+  const id = "b5f2c1a0-1111-4a2b-9c3d-000000000001";
+
+  it("tags every rendered snippet with its workout id", () => {
+    expect(renderWorkoutSnippet(runningWorkout(), options())).toContain(workoutMarker(id));
   });
 
-  it("leaves out distance when there is none", () => {
-    expect(describeWorkout(liftingWorkout(), "km")).toBe("Weightlifting — 16:00 — 1 h 5 min");
+  it("tags a snippet that has no score to show", () => {
+    const markdown = renderWorkoutSnippet(
+      pendingWorkout({ end: "2026-08-09T12:00:00.000Z" }),
+      options()
+    );
+    expect(markdown).toContain(workoutMarker("b5f2c1a0-4444-4a2b-9c3d-000000000004"));
+  });
+
+  it("recognises its own marker in a note", () => {
+    const note = `# Runs\n\n${renderWorkoutSnippet(runningWorkout(), options())}\n`;
+    expect(containsWorkout(note, id)).toBe(true);
+  });
+
+  it("does not confuse one workout for another", () => {
+    const note = renderWorkoutSnippet(runningWorkout(), options());
+    expect(containsWorkout(note, "b5f2c1a0-2222-4a2b-9c3d-000000000002")).toBe(false);
+  });
+
+  it("reports nothing for a note this plugin never touched", () => {
+    expect(containsWorkout("# Runs\n\nWent for a jog.\n", id)).toBe(false);
+  });
+
+  it("survives the marker being carried into a new note", () => {
+    expect(containsWorkout(renderWorkoutNote(runningWorkout(), options()), id)).toBe(true);
+  });
+
+  it("cannot be made to close the comment early", () => {
+    const marker = workoutMarker("evil--> <script>");
+    expect(marker.match(/-->/g)).toHaveLength(1);
+    expect(marker.endsWith("-->")).toBe(true);
   });
 });
 

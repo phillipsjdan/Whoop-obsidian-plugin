@@ -166,20 +166,59 @@ export function needsRefresh(tokens: TokenData, now: number = Date.now()): boole
   return now + REFRESH_MARGIN_MS >= tokens.expires_at;
 }
 
-/** Returns a valid access token, refreshing first if needed. Throws if not connected. */
-export async function getValidToken(
-  auth: AuthSettings,
-  saveTokens: (t: TokenData) => Promise<void>
-): Promise<string> {
-  if (!auth.tokens) {
-    throw new Error("Not connected to WHOOP. Connect in Settings → WHOOP workout insert.");
-  }
+export type RefreshFn = (
+  tokens: TokenData,
+  clientId: string,
+  clientSecret: string
+) => Promise<TokenData>;
 
-  if (needsRefresh(auth.tokens)) {
-    const refreshed = await refreshTokens(auth.tokens, auth.clientId, auth.clientSecret);
-    await saveTokens(refreshed);
+/**
+ * Hands out a valid access token, refreshing when one is close to expiring.
+ *
+ * Refreshes are single-flight. WHOOP rotates the refresh token on every use, so
+ * two concurrent refreshes would leave one of them holding a token the server
+ * has already retired — and whichever call saved last would persist it,
+ * breaking the connection until the user reconnects by hand. Overlapping
+ * callers share one in-flight refresh instead.
+ */
+export class TokenProvider {
+  private inFlight: Promise<TokenData> | null = null;
+
+  constructor(
+    private readonly readAuth: () => AuthSettings,
+    private readonly saveTokens: (t: TokenData) => Promise<void>,
+    private readonly refresh: RefreshFn = refreshTokens
+  ) {}
+
+  async getAccessToken(now: number = Date.now()): Promise<string> {
+    const auth = this.readAuth();
+    if (!auth.tokens) {
+      throw new Error(
+        "Not connected to WHOOP. Connect in Settings → WHOOP workout insert."
+      );
+    }
+
+    if (!needsRefresh(auth.tokens, now)) return auth.tokens.access_token;
+
+    if (!this.inFlight) {
+      this.inFlight = this.runRefresh(auth);
+    }
+    const refreshed = await this.inFlight;
     return refreshed.access_token;
   }
 
-  return auth.tokens.access_token;
+  private async runRefresh(auth: AuthSettings): Promise<TokenData> {
+    try {
+      const refreshed = await this.refresh(
+        auth.tokens as TokenData,
+        auth.clientId,
+        auth.clientSecret
+      );
+      await this.saveTokens(refreshed);
+      return refreshed;
+    } finally {
+      // Cleared only once settled, so a failure is retried rather than cached.
+      this.inFlight = null;
+    }
+  }
 }

@@ -12,14 +12,14 @@ import {
   PendingAuth,
   REDIRECT_URI,
   TokenData,
+  TokenProvider,
   buildAuthUrl,
   exchangeCode,
-  getValidToken,
   validateState,
 } from "./auth.ts";
 import { WhoopClient } from "./client.ts";
 import { getWorkoutsForDay } from "./fetch.ts";
-import { Workout } from "./models.ts";
+import { Workout, sportName } from "./models.ts";
 import {
   DEFAULT_SETTINGS,
   WhoopWorkoutSettingTab,
@@ -33,6 +33,7 @@ import {
   parseHeadingInput,
 } from "./insert.ts";
 import {
+  containsWorkout,
   normalizeNotePath,
   renderWorkoutNote,
   renderWorkoutSnippet,
@@ -204,19 +205,21 @@ export default class WhoopWorkoutPlugin extends Plugin {
         "WHOOP credentials are not configured. Open Settings → WHOOP workout insert."
       );
     }
-    const token = await getValidToken(
-      {
-        clientId: this.settings.clientId,
-        clientSecret: this.settings.clientSecret,
-        tokens: this.settings.tokens,
-      },
-      async (tokens: TokenData) => {
-        this.settings.tokens = tokens;
-        await this.saveSettings();
-      }
-    );
-    return new WhoopClient(token);
+    return new WhoopClient(await this.tokens.getAccessToken());
   }
+
+  /** Shared so overlapping commands never refresh the token twice. */
+  private readonly tokens = new TokenProvider(
+    () => ({
+      clientId: this.settings.clientId,
+      clientSecret: this.settings.clientSecret,
+      tokens: this.settings.tokens,
+    }),
+    async (tokens: TokenData) => {
+      this.settings.tokens = tokens;
+      await this.saveSettings();
+    }
+  );
 
   /** Runs the shared picker. Returns null when the user backs out. */
   private async chooseWorkout(
@@ -252,9 +255,32 @@ export default class WhoopWorkoutPlugin extends Plugin {
     );
     if (!workout) return;
 
+    if (!(await this.confirmNotDuplicate(editor.getValue(), workout))) return;
+
     // Only touches the editor buffer — no file is read or rewritten here.
     editor.replaceSelection(`${this.snippetFor(workout)}\n`);
     new Notice("Workout inserted.");
+  }
+
+  /**
+   * Asks before inserting a workout the note already carries. Blocks rendered
+   * by this plugin end with a hidden marker naming the workout they came from.
+   */
+  private async confirmNotDuplicate(
+    content: string,
+    workout: Workout
+  ): Promise<boolean> {
+    if (!containsWorkout(content, workout.id)) return true;
+
+    const again = await confirm(this.app, {
+      title: "Already in this note",
+      message: `This ${sportName(workout)} is already in the note. Insert it a second time?`,
+      confirmText: "Insert again",
+      cancelText: "Cancel",
+      warning: true,
+    });
+    if (!again) new Notice("Nothing was written.");
+    return again;
   }
 
   private async insertUnderHeadingCommand(file: TFile): Promise<void> {
@@ -285,6 +311,8 @@ export default class WhoopWorkoutPlugin extends Plugin {
     // Read first to find out whether the heading exists, because the answer
     // decides whether we need to ask the user anything.
     const current = await this.app.vault.read(file);
+    if (!(await this.confirmNotDuplicate(current, workout))) return;
+
     const preview = insertUnderHeading(current, target, block, position);
 
     let createHeading = false;

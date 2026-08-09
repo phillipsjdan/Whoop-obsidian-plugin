@@ -55,6 +55,18 @@ export class ConnectModal extends Modal {
         })
     );
 
+    // On iOS the button may not hand off to Safari. Showing the URL in a
+    // read-only field means it can always be selected and pasted by hand.
+    new Setting(contentEl)
+      .setName("Authorization URL")
+      .setDesc("If the button does nothing, copy this into your browser.")
+      .addText((text) => {
+        text.setValue(this.options.authUrl);
+        text.inputEl.readOnly = true;
+        text.inputEl.addClass("whoop-workout-wide-input");
+        text.inputEl.addEventListener("focus", () => text.inputEl.select());
+      });
+
     new Setting(contentEl)
       .setName("Callback URL")
       .setDesc(
