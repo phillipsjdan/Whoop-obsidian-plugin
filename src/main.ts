@@ -91,7 +91,10 @@ export default class WhoopWorkoutPlugin extends Plugin {
   }
 
   async loadSettings(): Promise<void> {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    // loadData is typed `any` — whatever is on disk is unvalidated, so it is
+    // narrowed to a partial before being merged over the defaults.
+    const saved = (await this.loadData()) as Partial<WhoopWorkoutSettings> | null;
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, saved);
   }
 
   async saveSettings(): Promise<void> {
