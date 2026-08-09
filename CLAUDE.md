@@ -25,11 +25,34 @@ is documented as 0–100 but has arrived as a 0–1 fraction, rendering a fully
 recorded run as "1%". Both are now read through helpers in `models.ts` that
 accept either form.
 
-**`developer.whoop.com` is unreachable from this environment.** Field shapes here
-were verified against third-party clients — the same class of source that had
-`zone_duration` wrong. So treat every `score` field as optional and read it
+**The official spec is vendored at `reference/whoop-openapi.json`.** It is a
+verbatim copy of `https://api.prod.whoop.com/developer/doc/openapi.json`, saved
+because both that URL and `developer.whoop.com` are unreachable from this
+environment — the reason field shapes were previously guessed from third-party
+clients, the same class of source that had `zone_duration` wrong. Check the
+vendored spec first. It is a snapshot, not a live feed, so a real response still
+wins over it; refresh it by pasting in a newly fetched copy.
+
+Even with the spec, treat every `score` field as optional and read it
 defensively: a renamed or missing field must degrade to a dropped clause or a
-skipped row, never a crash. `renderDaySummary` is the model for this.
+skipped row, never a crash. `renderDaySummary` is the model for this. The spec's
+own `required` lists are not a guarantee — it marks `percent_recorded` required
+and documents it as 0–100, and the 0–1 fractions that forced `percentRecorded`
+into existence were real responses.
+
+**`sport_id` outlived its own sunset date.** The spec marks it optional and says
+it "will not exist past" 09/01/2025, with `sport_name` required instead — but a
+note rendered on 2026-08-09 carried the 🏃 heading, and `sportEmoji` falls back
+to 💪 for an id it does not know. So WHOOP still sends it, and the spec's
+sunset dates are aspirational. Do not drop `sport_id` handling on the strength
+of the spec alone.
+
+If it does eventually go, nothing crashes: `sportName` falls through to
+`sport_name`, and the pace clause still renders, because the speed branch is
+only *chosen* when `SPEED_SPORT_IDS.has(sport_id)`. What breaks is quieter —
+every heading emoji becomes 💪, speed sports get a pace instead of a speed in
+both the table and the frontmatter, the "Distance: not recorded" line for a
+GPS-less run disappears, and the frontmatter writes `sport_id: undefined`.
 
 **Scope spellings are not uniform.** It is `read:cycles` (plural) but
 `read:recovery`, `read:sleep`, `read:workout`, `read:body_measurement`

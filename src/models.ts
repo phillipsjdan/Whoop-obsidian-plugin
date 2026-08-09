@@ -99,6 +99,13 @@ export interface Workout {
   end: string;
   /** UTC offset the workout was recorded in, e.g. "-07:00". */
   timezone_offset: string;
+  /**
+   * WHOOP's spec marks this optional and dates its removal to 09/01/2025, but a
+   * note rendered on 2026-08-09 still had a sport-specific emoji in its heading,
+   * which is only reachable through this field. It is typed required on that
+   * evidence. Should it ever actually go, the fallout is silent rather than
+   * fatal — see the note in CLAUDE.md.
+   */
   sport_id: number;
   /** May be absent or empty; fall back to SPORT_NAMES[sport_id]. */
   sport_name?: string;
