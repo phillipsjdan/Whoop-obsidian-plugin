@@ -1,7 +1,7 @@
 {
   "id": "whoop-workout-insert",
   "name": "WHOOP Workout Insert",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "minAppVersion": "1.5.0",
   "description": "Pick a specific WHOOP workout and insert it at your cursor, under a heading, or into a new note. Never overwrites notes you maintain by hand.",
   "author": "phillipsjdan",
