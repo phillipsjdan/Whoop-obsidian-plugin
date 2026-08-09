@@ -1,6 +1,6 @@
 {
   "name": "whoop-workout-insert",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Obsidian plugin to pick a specific WHOOP workout and insert it into the notes you already maintain",
   "main": "main.js",
   "scripts": {
