@@ -126,7 +126,14 @@ export default class WhoopWorkoutPlugin extends Plugin {
       await this.finishCallback(params);
     } catch (e) {
       new Notice(messageOf(e));
-      console.error("[WHOOP workout insert] authorization failed", e);
+      // Parameter names only — `code` and `state` are secrets, but knowing which
+      // of them arrived is the whole diagnosis when a callback goes wrong.
+      console.error(
+        `[WHOOP workout insert] authorization failed. Callback carried: ${
+          Object.keys(params).join(", ") || "no parameters"
+        }`,
+        e
+      );
     }
   }
 
@@ -163,6 +170,19 @@ export default class WhoopWorkoutPlugin extends Plugin {
     error?: string;
     error_description?: string;
   }): Promise<void> {
+    // An authorization WHOOP rejects outright can come back with an error and no
+    // state at all, and reporting the missing state then is actively misleading:
+    // it points at this plugin when the answer is in WHOOP's message. Nothing is
+    // exchanged here and the pending attempt is left alone, so surfacing the
+    // reason costs no security.
+    if (!params.state && params.error) {
+      throw new Error(
+        `WHOOP declined the authorization request: ${
+          params.error_description ?? params.error
+        }. If it mentions scopes, your developer app is missing one the plugin asks for — add read:workout, read:cycle, read:recovery and read:sleep to it at developer.whoop.com, save, then try again.`
+      );
+    }
+
     validateState(this.pendingAuth, params.state);
 
     // Past the state check, this callback is provably the one we started.

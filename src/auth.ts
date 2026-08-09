@@ -96,7 +96,10 @@ export function validateState(
   }
   if (!returnedState) {
     throw new AuthStateError(
-      "The WHOOP callback did not include a state parameter. Ignored."
+      "The WHOOP callback did not include a state parameter, so it cannot be " +
+        "verified as yours. This usually means WHOOP rejected the request before " +
+        "authorizing it — check that your developer app grants every scope the " +
+        "plugin asks for, and that you pasted the whole callback URL."
     );
   }
   if (!timingSafeEqual(returnedState, pending.state)) {
