@@ -13,7 +13,7 @@
  * on a page contribute three sets of tags and Obsidian indexes all of them.
  */
 
-import { Workout, sportName } from "./models.ts";
+import { DayContext, Workout, sportName } from "./models.ts";
 
 export const DEFAULT_TAG_PREFIX = "whoop";
 
@@ -29,12 +29,34 @@ export const HIGH_STRAIN = 14;
 
 export type StrainBand = "moderate" | "high";
 
+/**
+ * WHOOP's recovery colours: red 1–33%, yellow 34–66%, green 67–100%. Unlike
+ * strain, every scored day falls in a band — recovery is a percentage of a
+ * fixed range rather than an open-ended effort score, so there is no "light"
+ * end to leave untagged.
+ */
+export const YELLOW_RECOVERY = 34;
+export const GREEN_RECOVERY = 67;
+
+export type RecoveryBand = "red" | "yellow" | "green";
+
 export interface TagOptions {
   /** Tag namespace, without the leading "#". Empty means write no tags. */
   tagPrefix: string;
+  /** `#whoop/sport/running` — the sport as a tag. */
   includeSportTag: boolean;
+  /** `#whoop/strain/high` — only for a moderate or harder workout. */
   includeStrainTag: boolean;
+  /** `#whoop/recovery/green` — on the day sentence, not the workout. */
+  includeRecoveryTag: boolean;
 }
+
+export const DEFAULT_TAG_OPTIONS: TagOptions = {
+  tagPrefix: DEFAULT_TAG_PREFIX,
+  includeSportTag: true,
+  includeStrainTag: true,
+  includeRecoveryTag: true,
+};
 
 /** Which band a strain figure falls in, or null when it is light or missing. */
 export function strainBand(strain: number | undefined): StrainBand | null {
@@ -43,6 +65,21 @@ export function strainBand(strain: number | undefined): StrainBand | null {
   if (value >= HIGH_STRAIN) return "high";
   if (value >= MODERATE_STRAIN) return "moderate";
   return null;
+}
+
+/**
+ * Which colour a recovery score falls in, or null when there is no usable
+ * score. Zero is read as absent rather than as a very red day: WHOOP scores
+ * recovery from 1, and the day sentence already treats a non-positive score as
+ * a figure it does not have.
+ */
+export function recoveryBand(score: number | undefined): RecoveryBand | null {
+  if (!Number.isFinite(score)) return null;
+  const value = score as number;
+  if (value <= 0) return null;
+  if (value >= GREEN_RECOVERY) return "green";
+  if (value >= YELLOW_RECOVERY) return "yellow";
+  return "red";
 }
 
 /**
@@ -68,6 +105,29 @@ export function workoutTags(workout: Workout, options: TagOptions): string[] {
   }
 
   return tags;
+}
+
+/**
+ * Tags for the day sentence: how recovered the body was that morning.
+ *
+ * This belongs to the day rather than to any workout on it, which is why it
+ * rides with the sentence — written once per note — instead of with each block.
+ * Recovery is also the figure worth joining to your own writing: WHOOP can plot
+ * it, but only the vault knows what you said about the days it was red.
+ *
+ * A score WHOOP is still calibrating gets no tag. The sentence can hedge it
+ * ("treat that figure loosely") and a tag cannot, so tagging one would state as
+ * fact exactly what the prose next to it disclaims.
+ */
+export function dayTags(context: DayContext, options: TagOptions): string[] {
+  const prefix = normalizeTagPrefix(options.tagPrefix);
+  if (!prefix || !options.includeRecoveryTag) return [];
+
+  const score = context.recovery?.score;
+  if (!score || score.user_calibrating) return [];
+
+  const band = recoveryBand(score.recovery_score);
+  return band ? [`#${prefix}/recovery/${band}`] : [];
 }
 
 /**

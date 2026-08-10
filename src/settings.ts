@@ -5,8 +5,10 @@ import { DistanceUnit } from "./format.ts";
 import { InsertPosition } from "./insert.ts";
 import {
   DEFAULT_TAG_PREFIX,
+  GREEN_RECOVERY,
   HIGH_STRAIN,
   MODERATE_STRAIN,
+  YELLOW_RECOVERY,
   normalizeTagPrefix,
 } from "./tags.ts";
 import { TemplateOptions } from "./template.ts";
@@ -33,6 +35,7 @@ export interface WhoopWorkoutSettings {
   tagPrefix: string;
   includeSportTag: boolean;
   includeStrainTag: boolean;
+  includeRecoveryTag: boolean;
 
   /** Cached from /user/measurement/body — it changes rarely enough to store. */
   maxHeartRate: number | null;
@@ -66,6 +69,7 @@ export const DEFAULT_SETTINGS: WhoopWorkoutSettings = {
   tagPrefix: DEFAULT_TAG_PREFIX,
   includeSportTag: true,
   includeStrainTag: true,
+  includeRecoveryTag: true,
 
   maxHeartRate: null,
   maxHeartRateFetchedAt: 0,
@@ -90,6 +94,11 @@ export function templateOptions(settings: WhoopWorkoutSettings): TemplateOptions
     tagPrefix: settings.tagPrefix,
     includeSportTag: settings.includeSportTag,
     includeStrainTag: settings.includeStrainTag,
+    // The day sentence is what carries this tag, so with the sentence off there
+    // is nothing to put it on. Already enforced upstream — the day context is
+    // never fetched in that case — but stated here so the options describe the
+    // output on their own rather than relying on the caller's order.
+    includeRecoveryTag: settings.includeRecoveryTag && settings.includeDaySummary,
     maxHeartRate: settings.includePercentOfMax ? settings.maxHeartRate : null,
   };
 }
@@ -289,6 +298,8 @@ export class WhoopWorkoutSettingTab extends PluginSettingTab {
         toggle.setValue(settings.includeDaySummary).onChange(async (value) => {
           settings.includeDaySummary = value;
           await this.plugin.saveSettings();
+          // The recovery tag rides on this sentence, so its row enables with it.
+          this.display();
         })
       );
 
@@ -353,6 +364,24 @@ export class WhoopWorkoutSettingTab extends PluginSettingTab {
           settings.includeStrainTag = value;
           await this.plugin.saveSettings();
         })
+      );
+
+    new Setting(containerEl)
+      .setName("Recovery tag")
+      .setDesc(
+        settings.includeDaySummary
+          ? `Tag the day sentence with WHOOP's recovery colour: /recovery/red below ${YELLOW_RECOVERY}%, /recovery/yellow below ${GREEN_RECOVERY}%, /recovery/green above. Describes the day, so it is written once per note. A score WHOOP is still calibrating is left untagged.`
+          : "Tag the day sentence with WHOOP's recovery colour. Needs the day context sentence, which is currently switched off."
+      )
+      .setDisabled(!settings.includeDaySummary)
+      .addToggle((toggle) =>
+        toggle
+          .setValue(settings.includeRecoveryTag)
+          .setDisabled(!settings.includeDaySummary)
+          .onChange(async (value) => {
+            settings.includeRecoveryTag = value;
+            await this.plugin.saveSettings();
+          })
       );
   }
 

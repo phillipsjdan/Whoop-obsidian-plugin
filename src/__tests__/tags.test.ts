@@ -1,24 +1,39 @@
 import { describe, expect, it } from "vitest";
 import {
+  GREEN_RECOVERY,
   HIGH_STRAIN,
   MODERATE_STRAIN,
+  YELLOW_RECOVERY,
+  dayTags,
   normalizeTagPrefix,
+  recoveryBand,
   slugifyTag,
   strainBand,
   workoutTags,
 } from "../tags.ts";
 import { scanHeadings } from "../insert.ts";
-import { DEFAULT_TEMPLATE_OPTIONS, renderWorkoutSnippet } from "../template.ts";
+import {
+  DEFAULT_TEMPLATE_OPTIONS,
+  renderDaySummary,
+  renderWorkoutSnippet,
+} from "../template.ts";
 import { SPORT_NAMES } from "../models.ts";
 import {
   cyclingWorkout,
+  dayContext,
   liftingWorkout,
   pendingWorkout,
+  recovery,
   runningWorkout,
   workoutScore,
 } from "./fixtures.ts";
 
-const ON = { tagPrefix: "whoop", includeSportTag: true, includeStrainTag: true };
+const ON = {
+  tagPrefix: "whoop",
+  includeSportTag: true,
+  includeStrainTag: true,
+  includeRecoveryTag: true,
+};
 
 describe("slugifyTag", () => {
   it("lower-cases and hyphenates a sport name", () => {
@@ -75,6 +90,99 @@ describe("strainBand", () => {
   it("returns null rather than guessing at a missing strain", () => {
     expect(strainBand(undefined)).toBeNull();
     expect(strainBand(Number.NaN)).toBeNull();
+  });
+});
+
+describe("recoveryBand", () => {
+  it("uses WHOOP's own colour boundaries", () => {
+    expect(recoveryBand(YELLOW_RECOVERY)).toBe("yellow");
+    expect(recoveryBand(GREEN_RECOVERY)).toBe("green");
+    expect(recoveryBand(33)).toBe("red");
+    expect(recoveryBand(66)).toBe("yellow");
+    expect(recoveryBand(100)).toBe("green");
+  });
+
+  it("bands every scored day, unlike strain", () => {
+    // Recovery is a percentage of a fixed range, so there is no light end to
+    // leave untagged the way a low strain is.
+    expect(recoveryBand(1)).toBe("red");
+  });
+
+  it("reads a missing or zero score as absent rather than as very red", () => {
+    expect(recoveryBand(undefined)).toBeNull();
+    expect(recoveryBand(Number.NaN)).toBeNull();
+    expect(recoveryBand(0)).toBeNull();
+  });
+});
+
+describe("dayTags", () => {
+  it("names the recovery colour", () => {
+    // The fixture scores 62% — yellow.
+    expect(dayTags(dayContext(), ON)).toEqual(["#whoop/recovery/yellow"]);
+  });
+
+  it("says nothing for a score WHOOP is still calibrating", () => {
+    // The sentence hedges the figure; a tag cannot, so it would assert as fact
+    // exactly what the prose beside it disclaims.
+    const calibrating = dayContext({
+      recovery: recovery({ score: { recovery_score: 78, user_calibrating: true } }),
+    });
+
+    expect(dayTags(calibrating, ON)).toEqual([]);
+    expect(renderDaySummary(calibrating)).toContain("still calibrating");
+  });
+
+  it("says nothing when the day has no recovery at all", () => {
+    expect(dayTags(dayContext({ recovery: null }), ON)).toEqual([]);
+  });
+
+  it("honours its own flag and the prefix", () => {
+    expect(dayTags(dayContext(), { ...ON, includeRecoveryTag: false })).toEqual([]);
+    expect(dayTags(dayContext(), { ...ON, tagPrefix: "" })).toEqual([]);
+    expect(dayTags(dayContext(), { ...ON, tagPrefix: "health/whoop" })).toEqual([
+      "#health/whoop/recovery/yellow",
+    ]);
+  });
+
+  it("is independent of the workout tag flags", () => {
+    const options = { ...ON, includeSportTag: false, includeStrainTag: false };
+    expect(dayTags(dayContext(), options)).toEqual(["#whoop/recovery/yellow"]);
+  });
+});
+
+describe("the recovery tag in a rendered day sentence", () => {
+  it("sits between the prose and the marker", () => {
+    const lines = renderDaySummary(dayContext()).split("\n");
+
+    expect(lines[0].startsWith("Recovery that morning was 62%")).toBe(true);
+    expect(lines[1]).toBe("#whoop/recovery/yellow");
+    expect(lines[2]).toBe("<!-- whoop-day: 2026-08-09 -->");
+  });
+
+  it("rides with the sentence, so it is written once per note", () => {
+    // The sentence is what carries it, and shouldIncludeDaySummary already
+    // keeps that to the first workout on a page.
+    const summary = renderDaySummary(dayContext());
+    const both = `${summary}\n\n${renderWorkoutSnippet(runningWorkout())}`;
+
+    expect(both.match(/#whoop\/recovery\//g)).toHaveLength(1);
+  });
+
+  it("leaves the sentence untouched when switched off", () => {
+    const summary = renderDaySummary(dayContext(), {
+      ...ON,
+      includeRecoveryTag: false,
+    });
+
+    expect(summary).not.toContain("#whoop/recovery");
+    expect(summary.split("\n")).toHaveLength(2);
+  });
+
+  it("is dropped when the day has a sleep score but no recovery", () => {
+    const summary = renderDaySummary(dayContext({ recovery: null }));
+
+    expect(summary).toContain("The night before brought");
+    expect(summary).not.toContain("#whoop/recovery");
   });
 });
 

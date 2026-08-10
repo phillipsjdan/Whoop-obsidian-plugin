@@ -479,6 +479,7 @@ describe("renderDaySummary", () => {
           "HRV of 78 ms and blood oxygen at 96%. The night before brought " +
           "7 h 12 min of sleep against a need of 8 h 22 min — 86% sleep " +
           "performance, 93% efficiency and 9 disturbances.",
+        "#whoop/recovery/yellow",
         "<!-- whoop-day: 2026-08-09 -->",
       ].join("\n")
     );

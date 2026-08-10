@@ -13,7 +13,7 @@ import {
   totalZoneMs,
   zoneDurations,
 } from "./models.ts";
-import { DEFAULT_TAG_PREFIX, workoutTags } from "./tags.ts";
+import { DEFAULT_TAG_OPTIONS, TagOptions, dayTags, workoutTags } from "./tags.ts";
 import {
   DistanceUnit,
   durationMs,
@@ -30,7 +30,7 @@ import {
   workoutDateStamp,
 } from "./format.ts";
 
-export interface TemplateOptions {
+export interface TemplateOptions extends TagOptions {
   distanceUnit: DistanceUnit;
   /** Token pattern for the timestamp in the snippet heading. */
   dateFormat: string;
@@ -42,15 +42,6 @@ export interface TemplateOptions {
   /** Per-hour derived figures: calorie burn rate and strain rate. */
   includeRates: boolean;
   /**
-   * Namespace for the tags under the workout heading, without the leading "#".
-   * Empty writes no tags at all, whatever the two flags below say.
-   */
-  tagPrefix: string;
-  /** `#whoop/sport/running` — the sport as a tag. */
-  includeSportTag: boolean;
-  /** `#whoop/strain/high` — only for a moderate or harder workout. */
-  includeStrainTag: boolean;
-  /**
    * The user's max heart rate, for expressing the HR rows as a percentage.
    * Null when unknown or the setting is off, which drops the percentage only.
    */
@@ -58,6 +49,7 @@ export interface TemplateOptions {
 }
 
 export const DEFAULT_TEMPLATE_OPTIONS: TemplateOptions = {
+  ...DEFAULT_TAG_OPTIONS,
   distanceUnit: "km",
   dateFormat: "YYYY-MM-DD HH:mm",
   headingLevel: 3,
@@ -65,9 +57,6 @@ export const DEFAULT_TEMPLATE_OPTIONS: TemplateOptions = {
   includeZoneDurations: true,
   includeDataCompleteness: true,
   includeRates: true,
-  tagPrefix: DEFAULT_TAG_PREFIX,
-  includeSportTag: true,
-  includeStrainTag: true,
   maxHeartRate: null,
 };
 
@@ -147,7 +136,10 @@ export function shouldIncludeDaySummary(content: string): boolean {
  * Both figures are settled by the time any workout exists to write them against
  * — WHOOP scores them once in the morning and they do not move.
  */
-export function renderDaySummary(context: DayContext): string {
+export function renderDaySummary(
+  context: DayContext,
+  options: TagOptions = DEFAULT_TAG_OPTIONS
+): string {
   if (!hasDayContext(context)) return "";
 
   const sentences = [recoverySentence(context), sleepSentence(context)].filter(
@@ -155,7 +147,15 @@ export function renderDaySummary(context: DayContext): string {
   );
 
   if (sentences.length === 0) return "";
-  return `${sentences.join(" ")}\n${dayMarker(context.date)}`;
+
+  // The recovery tag rides with the sentence rather than with a workout: it
+  // describes the day, and the sentence is the thing written once per note.
+  const lines = [sentences.join(" ")];
+  const tags = dayTags(context, options);
+  if (tags.length > 0) lines.push(tags.join(" "));
+  lines.push(dayMarker(context.date));
+
+  return lines.join("\n");
 }
 
 function recoverySentence(context: DayContext): string | null {
@@ -513,7 +513,7 @@ export function renderWorkoutNote(
   }
   lines.push("---", "");
 
-  const summary = context ? renderDaySummary(context) : "";
+  const summary = context ? renderDaySummary(context, options) : "";
   if (summary) lines.push(summary, "");
 
   lines.push(renderWorkoutSnippet(workout, options), "");
