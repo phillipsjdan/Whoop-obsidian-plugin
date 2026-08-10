@@ -347,7 +347,7 @@ export default class WhoopWorkoutPlugin extends Plugin {
     const snippet = this.snippetFor(workout);
     if (!context || !shouldIncludeDaySummary(content)) return snippet;
 
-    const summary = renderDaySummary(context);
+    const summary = renderDaySummary(context, templateOptions(this.settings));
     return summary ? `${summary}\n\n${snippet}` : snippet;
   }
 

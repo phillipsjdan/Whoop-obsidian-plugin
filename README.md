@@ -91,9 +91,12 @@ Suggests a path from the workout's date and sport (both the folder and the filen
 Recovery that morning was 62%, with a resting heart rate of 48 bpm, HRV of 78 ms
 and blood oxygen at 96%. The night before brought 7 h 12 min of sleep against a
 need of 8 h 22 min — 86% sleep performance, 93% efficiency and 9 disturbances.
+#whoop/recovery/yellow
 <!-- whoop-day: 2026-08-09 -->
 
 ### 🏃 Running — 2026-08-09 07:12
+
+#whoop/sport/running #whoop/strain/moderate
 
 | Metric | Value |
 |--------|-------|
@@ -115,7 +118,36 @@ need of 8 h 22 min — 86% sleep performance, 93% efficiency and 9 disturbances.
 <!-- whoop-workout: b5f2c1a0-1111-4a2b-9c3d-000000000001 -->
 ```
 
-The workout block is self-contained: one heading, one table, no navigation links, so it sits inside whatever structure your note already has. The trailing HTML comments are invisible in reading view and are what let the plugin recognise its own output later.
+The workout block is self-contained: one heading, one tag line, one table, no navigation links, so it sits inside whatever structure your note already has. The day sentence above it carries its own tag and its own marker. The trailing HTML comments are invisible in reading view and are what let the plugin recognise its own output later.
+
+### Tags
+
+A markdown table is a **reading** artifact. Nothing in Obsidian can query it — Dataview reads frontmatter and inline fields, Bases reads properties, and neither one parses a rendered table. The tags are what make an inserted workout findable afterwards.
+
+Two go on the line under each workout heading, and one rides with the day sentence:
+
+| Tag | Where | When |
+|-----|-------|------|
+| `#whoop/sport/<sport>` | Workout | Always, named after the workout's sport |
+| `#whoop/strain/moderate` | Workout | Strain 10 – 13.9 |
+| `#whoop/strain/high` | Workout | Strain 14 and above |
+| `#whoop/recovery/red` | Day sentence | Recovery below 34% |
+| `#whoop/recovery/yellow` | Day sentence | Recovery 34 – 66% |
+| `#whoop/recovery/green` | Day sentence | Recovery 67% and above |
+
+Every boundary is WHOOP's own. Strain bands are light 0–9.9, moderate 10–13.9, strenuous 14–17.9, all out 18–21, with the top two collapsed into one; **anything below 10 gets no strain tag at all**, deliberately, because a tag that lands on every workout partitions nothing and the point of these is to make the hard days findable. Recovery uses the app's own colours, and every scored day falls in one of them — recovery is a percentage of a fixed range, so there is no light end to leave out.
+
+**Recovery is tagged on the day sentence, not on the workout**, because that is what it describes — and since the sentence is written [once per note](#the-day-context-sentence), a page collecting three workouts gets one recovery tag rather than three copies of the same fact. A score WHOOP is still calibrating is left untagged: the sentence can hedge it, a tag cannot, and tagging it would state as fact exactly what the prose beside it disclaims. The tag needs the day context sentence switched on, since that is what carries it.
+
+Recovery is also the tag most worth having. WHOOP can already plot your recovery against time far better than Obsidian will; what only the vault can answer is what you *wrote* on the days it was red.
+
+**Why tags rather than note properties.** Properties are one flat namespace per note. A daily note holding a morning run and an evening lift has nowhere to put two sports and two strains under a single `sport:` / `strain:` key — you would need indexed names like `strain_1`, which no filter can match on. Tags are multi-valued by nature: three workout blocks on a page contribute three sets and Obsidian indexes all of them.
+
+Sport names are lower-cased and reduced to what Obsidian will index, so `Hiking/Rucking` becomes `#whoop/sport/hiking-rucking` and `Track & Field` becomes `#whoop/sport/track-field`. The slash is folded to a hyphen rather than kept — it nests in Obsidian's tag tree, and Hiking/Rucking is one sport, not a rucking sub-category of hiking.
+
+The namespace is a setting. Set it to `health/whoop` to nest the whole lot under a tag you already keep, or clear it to write no tags at all. Each of the two kinds can also be switched off on its own.
+
+Notes created by **Create new note from WHOOP workout** additionally declare the same tags as a `tags:` property, since such a note holds exactly one workout and a property is the one place every query engine is guaranteed to look.
 
 ### The day context sentence
 
@@ -133,7 +165,7 @@ It is written **once per note**, with the first WHOOP block added to the page:
 
 Every clause is dropped when WHOOP has no number for it, so a partially scored day still reads as English. A day with nothing scored at all produces no sentence rather than an empty one. If WHOOP is still calibrating your baseline, the sentence says so instead of quoting the recovery score as fact.
 
-Needs the `read:recovery` and `read:sleep` scopes — see [upgrading](#upgrading-from-a-version-before-the-day-context) if you connected before they were requested. Switch it off under **Settings → Day context sentence**, and those endpoints are never called.
+Needs the `read:recovery` and `read:sleep` scopes — see [upgrading](#upgrading-from-a-version-before-the-day-context) if you connected before they were requested. Switch it off under **Settings → Day context sentence**, and those endpoints are never called — and with them the [recovery tag](#tags), which the sentence carries.
 
 ### Details
 
@@ -196,6 +228,10 @@ Pace and speed are written as **numbers**, not as the table's `5:14 /km`, so the
 | Heart rate as a percentage of max | on | Needs `read:body_measurement`; max HR is cached and re-read monthly |
 | Data completeness | on | `percent_recorded` row |
 | Day context sentence | on | Recovery and sleep above the first workout in a note |
+| Tag prefix | `whoop` | Namespace for every tag; slashes nest, empty writes none |
+| Sport tag | on | `#whoop/sport/running` |
+| Strain tag | on | `#whoop/strain/moderate` from 10, `/high` from 14 |
+| Recovery tag | on | `#whoop/recovery/red\|yellow\|green` on the day sentence; needs it switched on |
 | Default heading | `## WHOOP` | Pre-filled in the heading prompt |
 | Position within the section | End of the section | Or directly under the heading |
 | New note folder | `WHOOP Workouts` | Empty for the vault root |

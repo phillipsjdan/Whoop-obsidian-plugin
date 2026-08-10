@@ -13,6 +13,7 @@ import {
   totalZoneMs,
   zoneDurations,
 } from "./models.ts";
+import { DEFAULT_TAG_OPTIONS, TagOptions, dayTags, workoutTags } from "./tags.ts";
 import {
   DistanceUnit,
   durationMs,
@@ -29,7 +30,7 @@ import {
   workoutDateStamp,
 } from "./format.ts";
 
-export interface TemplateOptions {
+export interface TemplateOptions extends TagOptions {
   distanceUnit: DistanceUnit;
   /** Token pattern for the timestamp in the snippet heading. */
   dateFormat: string;
@@ -48,6 +49,7 @@ export interface TemplateOptions {
 }
 
 export const DEFAULT_TEMPLATE_OPTIONS: TemplateOptions = {
+  ...DEFAULT_TAG_OPTIONS,
   distanceUnit: "km",
   dateFormat: "YYYY-MM-DD HH:mm",
   headingLevel: 3,
@@ -134,7 +136,10 @@ export function shouldIncludeDaySummary(content: string): boolean {
  * Both figures are settled by the time any workout exists to write them against
  * — WHOOP scores them once in the morning and they do not move.
  */
-export function renderDaySummary(context: DayContext): string {
+export function renderDaySummary(
+  context: DayContext,
+  options: TagOptions = DEFAULT_TAG_OPTIONS
+): string {
   if (!hasDayContext(context)) return "";
 
   const sentences = [recoverySentence(context), sleepSentence(context)].filter(
@@ -142,7 +147,15 @@ export function renderDaySummary(context: DayContext): string {
   );
 
   if (sentences.length === 0) return "";
-  return `${sentences.join(" ")}\n${dayMarker(context.date)}`;
+
+  // The recovery tag rides with the sentence rather than with a workout: it
+  // describes the day, and the sentence is the thing written once per note.
+  const lines = [sentences.join(" ")];
+  const tags = dayTags(context, options);
+  if (tags.length > 0) lines.push(tags.join(" "));
+  lines.push(dayMarker(context.date));
+
+  return lines.join("\n");
 }
 
 function recoverySentence(context: DayContext): string | null {
@@ -237,6 +250,12 @@ export function renderWorkoutSnippet(
   );
 
   const lines: string[] = [`${"#".repeat(level)} ${emoji}${name} — ${timestamp}`, ""];
+
+  // On their own line under the heading rather than appended to it: a tag in
+  // heading text ends up in the outline, the table of contents and every link
+  // to that heading.
+  const tags = workoutTags(workout, options);
+  if (tags.length > 0) lines.push(tags.join(" "), "");
 
   const rows = buildRows(workout, options);
   if (rows.length === 0) {
@@ -483,9 +502,18 @@ export function renderWorkoutNote(
 
   const lines = ["---"];
   for (const [key, value] of front) lines.push(`${key}: ${value}`);
-  lines.push("tags:", "  - whoop", "  - workout", "---", "");
 
-  const summary = context ? renderDaySummary(context) : "";
+  // The same tags the body carries, repeated as a property. Obsidian indexes
+  // body tags too, so this is redundant for search — it is here because a
+  // property is the one place every query engine is guaranteed to look, and a
+  // note holding exactly one workout has no reason not to declare them.
+  lines.push("tags:", "  - whoop", "  - workout");
+  for (const tag of workoutTags(workout, options)) {
+    lines.push(`  - ${tag.slice(1)}`);
+  }
+  lines.push("---", "");
+
+  const summary = context ? renderDaySummary(context, options) : "";
   if (summary) lines.push(summary, "");
 
   lines.push(renderWorkoutSnippet(workout, options), "");
