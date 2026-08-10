@@ -13,6 +13,7 @@ import {
   totalZoneMs,
   zoneDurations,
 } from "./models.ts";
+import { DEFAULT_TAG_PREFIX, workoutTags } from "./tags.ts";
 import {
   DistanceUnit,
   durationMs,
@@ -41,6 +42,15 @@ export interface TemplateOptions {
   /** Per-hour derived figures: calorie burn rate and strain rate. */
   includeRates: boolean;
   /**
+   * Namespace for the tags under the workout heading, without the leading "#".
+   * Empty writes no tags at all, whatever the two flags below say.
+   */
+  tagPrefix: string;
+  /** `#whoop/sport/running` — the sport as a tag. */
+  includeSportTag: boolean;
+  /** `#whoop/strain/high` — only for a moderate or harder workout. */
+  includeStrainTag: boolean;
+  /**
    * The user's max heart rate, for expressing the HR rows as a percentage.
    * Null when unknown or the setting is off, which drops the percentage only.
    */
@@ -55,6 +65,9 @@ export const DEFAULT_TEMPLATE_OPTIONS: TemplateOptions = {
   includeZoneDurations: true,
   includeDataCompleteness: true,
   includeRates: true,
+  tagPrefix: DEFAULT_TAG_PREFIX,
+  includeSportTag: true,
+  includeStrainTag: true,
   maxHeartRate: null,
 };
 
@@ -237,6 +250,12 @@ export function renderWorkoutSnippet(
   );
 
   const lines: string[] = [`${"#".repeat(level)} ${emoji}${name} — ${timestamp}`, ""];
+
+  // On their own line under the heading rather than appended to it: a tag in
+  // heading text ends up in the outline, the table of contents and every link
+  // to that heading.
+  const tags = workoutTags(workout, options);
+  if (tags.length > 0) lines.push(tags.join(" "), "");
 
   const rows = buildRows(workout, options);
   if (rows.length === 0) {
@@ -483,7 +502,16 @@ export function renderWorkoutNote(
 
   const lines = ["---"];
   for (const [key, value] of front) lines.push(`${key}: ${value}`);
-  lines.push("tags:", "  - whoop", "  - workout", "---", "");
+
+  // The same tags the body carries, repeated as a property. Obsidian indexes
+  // body tags too, so this is redundant for search — it is here because a
+  // property is the one place every query engine is guaranteed to look, and a
+  // note holding exactly one workout has no reason not to declare them.
+  lines.push("tags:", "  - whoop", "  - workout");
+  for (const tag of workoutTags(workout, options)) {
+    lines.push(`  - ${tag.slice(1)}`);
+  }
+  lines.push("---", "");
 
   const summary = context ? renderDaySummary(context) : "";
   if (summary) lines.push(summary, "");

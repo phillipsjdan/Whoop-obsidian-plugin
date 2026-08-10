@@ -3,6 +3,12 @@ import type WhoopWorkoutPlugin from "./main.ts";
 import { REDIRECT_URI, TokenData } from "./auth.ts";
 import { DistanceUnit } from "./format.ts";
 import { InsertPosition } from "./insert.ts";
+import {
+  DEFAULT_TAG_PREFIX,
+  HIGH_STRAIN,
+  MODERATE_STRAIN,
+  normalizeTagPrefix,
+} from "./tags.ts";
 import { TemplateOptions } from "./template.ts";
 
 export interface WhoopWorkoutSettings {
@@ -22,6 +28,11 @@ export interface WhoopWorkoutSettings {
   includeDaySummary: boolean;
   /** Express the heart-rate rows as a percentage of your max. */
   includePercentOfMax: boolean;
+
+  /** Namespace for the tags under each workout heading, without the "#". */
+  tagPrefix: string;
+  includeSportTag: boolean;
+  includeStrainTag: boolean;
 
   /** Cached from /user/measurement/body — it changes rarely enough to store. */
   maxHeartRate: number | null;
@@ -52,6 +63,10 @@ export const DEFAULT_SETTINGS: WhoopWorkoutSettings = {
   includeDaySummary: true,
   includePercentOfMax: true,
 
+  tagPrefix: DEFAULT_TAG_PREFIX,
+  includeSportTag: true,
+  includeStrainTag: true,
+
   maxHeartRate: null,
   maxHeartRateFetchedAt: 0,
 
@@ -72,6 +87,9 @@ export function templateOptions(settings: WhoopWorkoutSettings): TemplateOptions
     includeZoneDurations: settings.includeZoneDurations,
     includeDataCompleteness: settings.includeDataCompleteness,
     includeRates: settings.includeRates,
+    tagPrefix: settings.tagPrefix,
+    includeSportTag: settings.includeSportTag,
+    includeStrainTag: settings.includeStrainTag,
     maxHeartRate: settings.includePercentOfMax ? settings.maxHeartRate : null,
   };
 }
@@ -88,6 +106,7 @@ export class WhoopWorkoutSettingTab extends PluginSettingTab {
 
     this.renderConnection(containerEl);
     this.renderFormatting(containerEl);
+    this.renderTags(containerEl);
     this.renderInsertion(containerEl);
     this.renderNewNotes(containerEl);
   }
@@ -279,6 +298,59 @@ export class WhoopWorkoutSettingTab extends PluginSettingTab {
       .addToggle((toggle) =>
         toggle.setValue(settings.includeDataCompleteness).onChange(async (value) => {
           settings.includeDataCompleteness = value;
+          await this.plugin.saveSettings();
+        })
+      );
+  }
+
+  private renderTags(containerEl: HTMLElement): void {
+    const settings = this.plugin.settings;
+    const prefix = normalizeTagPrefix(settings.tagPrefix);
+
+    new Setting(containerEl).setName("Tags").setHeading();
+
+    containerEl.createEl("p", {
+      cls: "setting-item-description",
+      text: "Tags go on their own line under each workout heading. The metric table itself cannot be searched or queried — these are what make a workout findable later, and unlike note properties they work when a single note holds several workouts.",
+    });
+
+    new Setting(containerEl)
+      .setName("Tag prefix")
+      .setDesc(
+        prefix
+          ? `Namespace for every tag written, for example #${prefix}/sport/running. Use slashes to nest under a tag you already keep.`
+          : "Namespace for every tag written. Empty writes no tags at all."
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder(DEFAULT_TAG_PREFIX)
+          .setValue(settings.tagPrefix)
+          .onChange(async (value) => {
+            settings.tagPrefix = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Sport tag")
+      .setDesc(
+        `Tag each workout with its sport, for example #${prefix || DEFAULT_TAG_PREFIX}/sport/running.`
+      )
+      .addToggle((toggle) =>
+        toggle.setValue(settings.includeSportTag).onChange(async (value) => {
+          settings.includeSportTag = value;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Strain tag")
+      .setDesc(
+        `Tag harder workouts by WHOOP's own strain bands: /strain/moderate from ${MODERATE_STRAIN}, /strain/high from ${HIGH_STRAIN}. Anything lighter is left untagged.`
+      )
+      .addToggle((toggle) =>
+        toggle.setValue(settings.includeStrainTag).onChange(async (value) => {
+          settings.includeStrainTag = value;
           await this.plugin.saveSettings();
         })
       );

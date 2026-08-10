@@ -73,6 +73,8 @@ describe("renderWorkoutSnippet", () => {
       [
         "### 🏃 Running — 2026-08-09 07:12",
         "",
+        "#whoop/sport/running #whoop/strain/moderate",
+        "",
         "| Metric | Value |",
         "|--------|-------|",
         "| Strain | 12.4 |",
@@ -103,8 +105,9 @@ describe("renderWorkoutSnippet", () => {
     // No frontmatter fence — the snippet drops into a note that has its own.
     expect(lines.some((line) => line.trim() === "---")).toBe(false);
     expect(lines[0].startsWith("### ")).toBe(true);
-    // Exactly one heading: the workout's own.
-    expect(lines.filter((line) => line.startsWith("#"))).toHaveLength(1);
+    // Exactly one heading: the workout's own. The tag line also opens with "#"
+    // but has no space after it, so it is not an ATX heading.
+    expect(lines.filter((line) => /^#{1,6}(\s|$)/.test(line))).toHaveLength(1);
   });
 
   it("switches distance, pace and elevation to imperial units", () => {
@@ -371,6 +374,26 @@ describe("renderWorkoutNote", () => {
     expect(note).toContain('sport: "Hiking/Rucking"');
     expect(note).not.toContain("strain:");
     expect(note).not.toContain("distance_km:");
+  });
+
+  it("declares the workout's tags as a property as well as in the body", () => {
+    const note = renderWorkoutNote(runningWorkout(), options());
+
+    expect(note).toContain(
+      "tags:\n  - whoop\n  - workout\n  - whoop/sport/running\n  - whoop/strain/moderate"
+    );
+    // Without the "#" in YAML, but with it in the body.
+    expect(note).toContain("#whoop/sport/running #whoop/strain/moderate");
+  });
+
+  it("keeps the base tags when the workout's own tags are turned off", () => {
+    const note = renderWorkoutNote(
+      runningWorkout(),
+      options({ includeSportTag: false, includeStrainTag: false })
+    );
+
+    expect(note).toContain("tags:\n  - whoop\n  - workout\n---");
+    expect(note).not.toContain("whoop/sport/");
   });
 
   it("quotes values so a sport name with punctuation stays valid YAML", () => {

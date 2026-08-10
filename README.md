@@ -95,6 +95,8 @@ need of 8 h 22 min — 86% sleep performance, 93% efficiency and 9 disturbances.
 
 ### 🏃 Running — 2026-08-09 07:12
 
+#whoop/sport/running #whoop/strain/moderate
+
 | Metric | Value |
 |--------|-------|
 | Strain | 12.4 |
@@ -115,7 +117,29 @@ need of 8 h 22 min — 86% sleep performance, 93% efficiency and 9 disturbances.
 <!-- whoop-workout: b5f2c1a0-1111-4a2b-9c3d-000000000001 -->
 ```
 
-The workout block is self-contained: one heading, one table, no navigation links, so it sits inside whatever structure your note already has. The trailing HTML comments are invisible in reading view and are what let the plugin recognise its own output later.
+The workout block is self-contained: one heading, one tag line, one table, no navigation links, so it sits inside whatever structure your note already has. The trailing HTML comments are invisible in reading view and are what let the plugin recognise its own output later.
+
+### Tags
+
+A markdown table is a **reading** artifact. Nothing in Obsidian can query it — Dataview reads frontmatter and inline fields, Bases reads properties, and neither one parses a rendered table. The tags are what make an inserted workout findable afterwards.
+
+Two go on the line under each heading:
+
+| Tag | When |
+|-----|------|
+| `#whoop/sport/<sport>` | Always, named after the workout's sport |
+| `#whoop/strain/moderate` | Strain 10 – 13.9 |
+| `#whoop/strain/high` | Strain 14 and above |
+
+The strain boundaries are WHOOP's own bands — light 0–9.9, moderate 10–13.9, strenuous 14–17.9, all out 18–21 — with the top two collapsed into one. **Anything below 10 gets no strain tag at all**, deliberately: a tag that lands on every workout partitions nothing, and the point of these is to make the hard days findable.
+
+**Why tags rather than note properties.** Properties are one flat namespace per note. A daily note holding a morning run and an evening lift has nowhere to put two sports and two strains under a single `sport:` / `strain:` key — you would need indexed names like `strain_1`, which no filter can match on. Tags are multi-valued by nature: three workout blocks on a page contribute three sets and Obsidian indexes all of them.
+
+Sport names are lower-cased and reduced to what Obsidian will index, so `Hiking/Rucking` becomes `#whoop/sport/hiking-rucking` and `Track & Field` becomes `#whoop/sport/track-field`. The slash is folded to a hyphen rather than kept — it nests in Obsidian's tag tree, and Hiking/Rucking is one sport, not a rucking sub-category of hiking.
+
+The namespace is a setting. Set it to `health/whoop` to nest the whole lot under a tag you already keep, or clear it to write no tags at all. Each of the two kinds can also be switched off on its own.
+
+Notes created by **Create new note from WHOOP workout** additionally declare the same tags as a `tags:` property, since such a note holds exactly one workout and a property is the one place every query engine is guaranteed to look.
 
 ### The day context sentence
 
@@ -196,6 +220,9 @@ Pace and speed are written as **numbers**, not as the table's `5:14 /km`, so the
 | Heart rate as a percentage of max | on | Needs `read:body_measurement`; max HR is cached and re-read monthly |
 | Data completeness | on | `percent_recorded` row |
 | Day context sentence | on | Recovery and sleep above the first workout in a note |
+| Tag prefix | `whoop` | Namespace for every tag; slashes nest, empty writes none |
+| Sport tag | on | `#whoop/sport/running` |
+| Strain tag | on | `#whoop/strain/moderate` from 10, `/high` from 14 |
 | Default heading | `## WHOOP` | Pre-filled in the heading prompt |
 | Position within the section | End of the section | Or directly under the heading |
 | New note folder | `WHOOP Workouts` | Empty for the vault root |
