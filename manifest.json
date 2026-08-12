@@ -1,10 +1,10 @@
 {
   "id": "whoop-workout-insert",
-  "name": "WHOOP Workout Insert",
+  "name": "WHOOP workout insert",
   "version": "1.0.9",
   "minAppVersion": "1.5.0",
   "description": "Pick a specific WHOOP workout and insert it at your cursor, under a heading, or into a new note. Never overwrites notes you maintain by hand.",
   "author": "phillipsjdan",
-  "authorUrl": "https://github.com/phillipsjdan/Whoop-obsidian-plugin",
+  "authorUrl": "https://github.com/phillipsjdan",
   "isDesktopOnly": false
 }

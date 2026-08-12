@@ -117,5 +117,7 @@ export function retryAfterMs(
 }
 
 function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  // window.setTimeout, not the bare global: a timer scheduled from a popout
+  // window is cancelled when that window closes, which is what we want.
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
